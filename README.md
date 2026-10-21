@@ -13,4 +13,5 @@ Section: 01
 All foundational proposal milestones have been successfully completed:
 
 - [x] **`SCRUM-1`** Proposal (Problem Statement & Approach) — *Completed on Oct 21*
+- [x] **`SCRUM-6`** Proposal (Executive Summary & Need) — *Completed on Oct 21*
 
