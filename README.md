@@ -16,3 +16,4 @@ All foundational proposal milestones have been successfully completed:
 - [x] **`SCRUM-6`** Proposal (Executive Summary & Need) — *Completed on Oct 21*
 - [x] **`SCRUM-7`** Proposal (Objective & Outcome) — *Completed on Oct 21*
 
+Any question, please refer to the faq page.
