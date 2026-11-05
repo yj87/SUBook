@@ -181,6 +181,7 @@ export default function StudentclubLoginPage() {
           </div>
           
           <div className="flex flex-col items-start gap-3.5 w-full overflow-hidden">
+            {errorMsg && <p role="alert" className="w-full rounded-lg bg-red-50 p-3 text-sm text-red-700">{errorMsg}</p>}
             <button onClick={handleGoogleLogin} disabled={loading} className="flex py-0 px-5 justify-between items-center rounded-lg bg-[#7A1F3D] hover:bg-[#5c162d] transition-colors w-full h-[52px] overflow-hidden cursor-pointer disabled:opacity-70">
               <svg
                 width="20"

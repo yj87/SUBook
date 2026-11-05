@@ -1,11 +1,15 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
-import Login from './pages/LoginPage'; 
+import Login from './pages/LoginPage';
 import Onboarding from './pages/OnboardingPage';
 import AuthCallback from './pages/AuthCallback';
 import StudentDashboard from './pages/StudentDashboard';
 import MPPDashboard from './pages/MPPDashboard';
 import ClubDashboard from './pages/ClubDashboard';
+import VenueCatalogue from './pages/VenueCatalogue';
+import VenueDetails from './pages/VenueDetails';
+import AvailabilityPlaceholder from './pages/AvailabilityPlaceholder';
+import BookingRequestPlaceholder from './pages/BookingRequestPlaceholder';
 import PrivacyPolicy from './pages/PrivacyPolicy'
 import TermsOfUse from './pages/TermsOfUse'
 import Contact from './pages/Contact'
@@ -27,17 +31,25 @@ function App() {
         <Route path="/terms" element={<TermsOfUse />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/login/admin" element={<AdminLoginPage />} />
-        <Route path="/login/club" element={<ClubRepLoginPage />} /> 
+        <Route path="/login/club" element={<ClubRepLoginPage />} />
 
         {/* ONBOARDING (Any logged-in user) */}
         <Route element={<ProtectedRoute />}>
           <Route path="/onboarding" element={<Onboarding />} />
+        </Route>
+        {/* STUDENT AND CLUB REPRESENTATIVE VENUE BROWSING */}
+        <Route element={<ProtectedRoute allowedRoles={['student', 'club_representative']} />}>
+          <Route path="/venues" element={<VenueCatalogue />} />
+          <Route path="/venues/:venueId" element={<VenueDetails />} />
+          <Route path="/venues/:venueId/availability" element={<AvailabilityPlaceholder />} />
+          <Route path="/booking-request" element={<BookingRequestPlaceholder />} />
         </Route>
 
         {/* STUDENT ROUTES ONLY */}
         <Route element={<ProtectedRoute allowedRoles={['student']} />}>
           <Route path="/student-dashboard" element={<StudentDashboard />} />
           <Route path="/student-faq" element={<StudentFAQPage />} />
+
         </Route>
 
         {/* CLUB REPRESENTATIVE ROUTES ONLY */}

@@ -1,7 +1,15 @@
 {
-  "name": "backend",
+  "name": "subook",
   "version": "1.0.0",
-  "description": "",
+  "description": "SUB Venue Booking Management and Event Register",
+  "homepage": "https://github.com/yj87/SUBook#readme",
+  "bugs": {
+    "url": "https://github.com/yj87/SUBook/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yj87/SUBook.git"
+  },
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
