@@ -1,17 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import TopNavbar from '../components/TopNavbar';
+import ProfileModal from '../components/ProfileModal';
+import { supabase } from '../supabaseClient';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-
-const navigation = [
-  ['Home', '/student-dashboard'],
-  ['Book Venue', '/venues'],
-  ['Events', '#'],
-  ['FAQ', '#'],
-  ['Booking History', '#'],
-  ['Lost Item', '#'],
-  ['Feedback', '#'],
-];
 
 const photoByVenue = {
   'dance studio': 'Dance Studio.png',
@@ -36,7 +29,28 @@ export default function VenueDetails() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedPhoto, setSelectedPhoto] = useState('');
+  const [role, setRole] = useState('student');
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadRole = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || cancelled) return;
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('profile_id', user.id)
+        .maybeSingle();
+      if (!cancelled && !error && profile?.role) {
+        setRole(profile.role);
+      }
+    };
+    loadRole();
+    return () => { cancelled = true; };
+  }, []);
+
+  
   useEffect(() => {
     const controller = new AbortController();
 
@@ -82,17 +96,7 @@ export default function VenueDetails() {
 
   return (
     <div className="min-h-screen bg-[#F6F4F5] font-inter text-[#1F1A1C]">
-      <header className="border-b border-[#E3DEE0] bg-white">
-        <div className="mx-auto flex min-h-16 max-w-[1280px] flex-wrap items-center gap-x-14 gap-y-3 px-5 py-3 sm:px-[60px] lg:flex-nowrap lg:py-0">
-          <Link to="/student-dashboard" className="shrink-0 text-[22px] font-bold text-[#7A1F3D]">SUBook</Link>
-          <nav aria-label="Main navigation" className="flex flex-1 flex-wrap items-center justify-start gap-x-7 gap-y-2 text-sm lg:justify-between">
-            {navigation.map(([label, path]) => (
-              <a key={label} href={path} aria-current={label === 'Book Venue' ? 'page' : undefined} className={label === 'Book Venue' ? 'font-semibold text-[#7A1F3D]' : 'hover:text-[#7A1F3D]'}>{label}</a>
-            ))}
-          </nav>
-          <span className="rounded-lg bg-[#7A1F3D] px-6 py-[10px] text-[13px] font-semibold text-white">Student</span>
-        </div>
-      </header>
+      <TopNavbar role={role} onProfileOpen={setIsProfileOpen} />
 
       <main className="mx-auto max-w-[1280px] px-5 pb-24 pt-7 sm:px-[60px]">
         <button type="button" onClick={() => navigate(-1)} className="mb-5 text-sm font-medium text-[#6B6468] hover:text-[#7A1F3D]">← Back</button>
@@ -150,6 +154,11 @@ export default function VenueDetails() {
           </section>
         </div>
       </main>
+
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+      />
     </div>
   );
 }
