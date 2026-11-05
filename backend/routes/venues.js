@@ -311,7 +311,7 @@ router.get(
         error: bookingError,
       } = await supabase
         .from('bookings')
-        .select('start_time, end_time, status')
+        .select('start_time, end_time, status, expected_attendees')
         .eq('venue_id', venueId)
         .lt('start_time', monthEnd.toISOString())
         .gt('end_time', monthStart.toISOString())
@@ -334,13 +334,7 @@ router.get(
       // ====================================
 
       const isShared = venue.is_shared === true;
-
-      const maxConcurrentBookings = isShared
-        ? Math.max(
-          1,
-          Number(venue.max_concurrent_bookings) || 1
-        )
-        : 1;
+      const capacity = Math.max(1, Number(venue.capacity) || 1);
 
       // ====================================
       // STEP 5: GENERATE ONE-HOUR SLOTS
@@ -394,15 +388,29 @@ router.get(
           // =================================
 
           let status = 'available';
+          let remaining = capacity;
 
-          let remaining =
-            maxConcurrentBookings - bookingsCount;
+          if (isShared) {
+            const occupied = overlappingBookings.reduce(
+              (sum, b) =>
+                sum + (Number(b.expected_attendees) || 1),
+              0
+            );
 
-          if (bookingsCount >= maxConcurrentBookings) {
-            status = 'fully booked';
-            remaining = 0;
-          } else if (isShared && bookingsCount > 0) {
-            status = 'partially booked';
+            remaining = Math.max(0, capacity - occupied);
+
+            if (remaining === 0) {
+              status = 'fully booked';
+            } else if (occupied > 0) {
+              status = 'partially booked';
+            }
+          } else {
+            if (bookingsCount > 0) {
+              status = 'fully booked';
+              remaining = 0;
+            } else {
+              remaining = 1;
+            }
           }
 
           // =================================
@@ -412,15 +420,10 @@ router.get(
           slots.push({
             start: slotStart.toISOString(),
             end: slotEnd.toISOString(),
-
             bookingsCount,
-
             status,
-
             isShared,
-
-            maxConcurrentBookings,
-
+            capacity,
             remaining: Math.max(0, remaining),
           });
         }

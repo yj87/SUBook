@@ -1,4 +1,3 @@
-
 import express from 'express';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
@@ -30,6 +29,8 @@ const ACTIVE_BOOKING_STATUSES = [
   'confirmed',
   'approved_awaiting_payment',
 ];
+
+const MAX_DAILY_DAYS = 7;
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -116,6 +117,63 @@ function validateBookingTime(startValue, endValue) {
   return null;
 }
 
+// Validate daily booking span: 8 AM day 1 → midnight after day N.
+// `dates` is an array of YYYY-MM-DD strings (must be consecutive).
+function validateDailyRange(dates, startValue, endValue) {
+  if (!Array.isArray(dates) || dates.length < 1) {
+    return 'Daily booking requires at least one date';
+  }
+  if (dates.length > MAX_DAILY_DAYS) {
+    return `Daily booking cannot exceed ${MAX_DAILY_DAYS} days`;
+  }
+
+  const sorted = [...dates].sort();
+
+  for (let i = 0; i < sorted.length; i++) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(sorted[i])) {
+      return 'Invalid date format in daily booking';
+    }
+    if (i > 0) {
+      const prev = new Date(`${sorted[i - 1]}T00:00:00+08:00`);
+      const curr = new Date(`${sorted[i]}T00:00:00+08:00`);
+      if ((curr - prev) / 86400000 !== 1) {
+        return 'Daily booking dates must be consecutive';
+      }
+    }
+  }
+
+  const expectedStart = new Date(
+    `${sorted[0]}T08:00:00+08:00`
+  );
+  const lastMidnight = new Date(
+    `${sorted[sorted.length - 1]}T00:00:00+08:00`
+  );
+  const expectedEnd = new Date(
+    lastMidnight.getTime() + 24 * 3600000
+  );
+
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+
+  if (
+    !Number.isFinite(start.getTime()) ||
+    !Number.isFinite(end.getTime())
+  ) {
+    return 'Invalid daily booking time';
+  }
+  if (start.getTime() !== expectedStart.getTime()) {
+    return 'Daily booking must start at 8 AM on the first date';
+  }
+  if (end.getTime() !== expectedEnd.getTime()) {
+    return 'Daily booking must end at midnight after the last date';
+  }
+  if (start.getTime() <= Date.now()) {
+    return 'Booking must be in the future';
+  }
+
+  return null;
+}
+
 // Authenticate Supabase Auth access token.
 // Do not accept profile_id from the request body.
 async function requireBookingUser(req, res, next) {
@@ -170,7 +228,9 @@ async function requireBookingUser(req, res, next) {
 
 // ========================================
 // POST /api/bookings/create-booking
-// Create a pending booking request
+// Supports hourly and daily bookings.
+// Category A (is_shared=false): exclusive room.
+// Category B (is_shared=true): capacity-sum.
 // ========================================
 
 router.post(
@@ -181,6 +241,8 @@ router.post(
       const {
         venueId,
         clubId = null,
+        bookingType = 'hourly',
+        dates = [],
         event_name,
         purpose,
         expected_attendees,
@@ -188,15 +250,12 @@ router.post(
         end_time,
       } = req.body || {};
 
+      // ---------- Basic field validation ----------
       if (
         !isUUID(venueId) ||
         (clubId !== null && !isUUID(clubId)) ||
-        typeof event_name !== 'string' ||
-        !event_name.trim() ||
-        typeof purpose !== 'string' ||
-        !purpose.trim() ||
-        !Number.isInteger(expected_attendees) ||
-        expected_attendees < 1
+        typeof event_name !== 'string' || !event_name.trim() ||
+        typeof purpose !== 'string' || !purpose.trim()
       ) {
         return res.status(400).json({
           success: false,
@@ -204,38 +263,28 @@ router.post(
         });
       }
 
-      if (
-        event_name.length > 200 ||
-        purpose.length > 2000
-      ) {
+      if (event_name.length > 200 || purpose.length > 2000) {
         return res.status(400).json({
           success: false,
           error: 'Event name or purpose is too long',
         });
       }
 
-      const timeError = validateBookingTime(
-        start_time,
-        end_time
-      );
-
-      if (timeError) {
+      if (!['hourly', 'daily'].includes(bookingType)) {
         return res.status(400).json({
           success: false,
-          error: timeError,
+          error: 'Invalid booking type',
         });
       }
 
-      // Club bookings require further ownership verification.
-      // Do not accept arbitrary club IDs.
       if (clubId) {
         return res.status(501).json({
           success: false,
-          error:
-            'Club booking authorization is not configured yet',
+          error: 'Club booking authorization is not configured yet',
         });
       }
 
+      // ---------- Fetch venue ----------
       const { data: venue, error: venueError } =
         await supabase
           .from('venues')
@@ -245,8 +294,9 @@ router.post(
             venue_status,
             hourly_rate,
             hourly_deposit,
-            is_shared,
-            max_concurrent_bookings
+            daily_rate,
+            daily_deposit,
+            is_shared
           `)
           .eq('venue_id', venueId)
           .maybeSingle();
@@ -267,25 +317,80 @@ router.post(
         });
       }
 
-      if (expected_attendees > venue.capacity) {
-        return res.status(400).json({
-          success: false,
-          error: 'Expected attendees exceed venue capacity',
-        });
+      const isShared = venue.is_shared === true;
+      const capacity = Math.max(
+        1,
+        Number(venue.capacity) || 1
+      );
+
+      // ---------- Attendees ----------
+      // Category A: forced to 1.
+      // Category B: required, 1..capacity.
+      let attendees;
+      if (isShared) {
+        if (
+          !Number.isInteger(expected_attendees) ||
+          expected_attendees < 1
+        ) {
+          return res.status(400).json({
+            success: false,
+            error:
+              'Expected attendees is required for this venue',
+          });
+        }
+        if (expected_attendees > capacity) {
+          return res.status(400).json({
+            success: false,
+            error: `Expected attendees exceed venue capacity (${capacity})`,
+          });
+        }
+        attendees = expected_attendees;
+      } else {
+        attendees = 1;
       }
 
-      const durationHours =
-        (new Date(end_time) - new Date(start_time)) /
-        3600000;
+      // ---------- Time + pricing ----------
+      let quotedRate;
+      let quotedDeposit;
+      let durationHours;
 
-      // Assumption: hourly rate applies for each hour,
-      // hourly deposit is charged once per booking.
-      // Confirm against the agreed pricing policy.
-      const quotedRate =
-        Number(venue.hourly_rate) * durationHours;
+      if (bookingType === 'hourly') {
+        const timeError = validateBookingTime(
+          start_time,
+          end_time
+        );
+        if (timeError) {
+          return res.status(400).json({
+            success: false,
+            error: timeError,
+          });
+        }
 
-      const quotedDeposit =
-        Number(venue.hourly_deposit);
+        durationHours =
+          (new Date(end_time) - new Date(start_time)) /
+          3600000;
+
+        quotedRate =
+          Number(venue.hourly_rate) * durationHours;
+        quotedDeposit = Number(venue.hourly_deposit);
+      } else {
+        const rangeError = validateDailyRange(
+          dates,
+          start_time,
+          end_time
+        );
+        if (rangeError) {
+          return res.status(400).json({
+            success: false,
+            error: rangeError,
+          });
+        }
+
+        durationHours = dates.length * 16;
+        quotedRate =
+          Number(venue.daily_rate) * dates.length;
+        quotedDeposit = Number(venue.daily_deposit);
+      }
 
       if (
         !Number.isFinite(quotedRate) ||
@@ -299,12 +404,13 @@ router.post(
         });
       }
 
-      // This is a preliminary availability check.
-      // Pending requests do not reserve time slots.
+      // ---------- Overlap / capacity check ----------
       const { data: overlaps, error: overlapError } =
         await supabase
           .from('bookings')
-          .select('start_time, end_time')
+          .select(
+            'start_time, end_time, expected_attendees'
+          )
           .eq('venue_id', venueId)
           .lt('start_time', new Date(end_time).toISOString())
           .gt('end_time', new Date(start_time).toISOString())
@@ -312,31 +418,52 @@ router.post(
 
       if (overlapError) throw overlapError;
 
-      const limit = venue.is_shared
-        ? Math.max(1, venue.max_concurrent_bookings || 1)
-        : 1;
+      const active = overlaps || [];
 
-      for (let hour = 0; hour < durationHours; hour++) {
-        const slotStart =
-          new Date(start_time).getTime() + hour * 3600000;
+      if (isShared) {
+        for (
+          let hour = 0;
+          hour < durationHours;
+          hour++
+        ) {
+          const slotStart =
+            new Date(start_time).getTime() +
+            hour * 3600000;
+          const slotEnd = slotStart + 3600000;
 
-        const slotEnd = slotStart + 3600000;
+          const occupied = active
+            .filter(
+              (b) =>
+                new Date(b.start_time).getTime() <
+                  slotEnd &&
+                new Date(b.end_time).getTime() >
+                  slotStart
+            )
+            .reduce(
+              (sum, b) =>
+                sum + (Number(b.expected_attendees) || 1),
+              0
+            );
 
-        const occupied = (overlaps || []).filter((b) =>
-          new Date(b.start_time).getTime() < slotEnd &&
-          new Date(b.end_time).getTime() > slotStart
-        ).length;
-
-        if (occupied >= limit) {
+          if (occupied + attendees > capacity) {
+            return res.status(409).json({
+              success: false,
+              error:
+                'Selected slot is at full capacity',
+            });
+          }
+        }
+      } else {
+        if (active.length > 0) {
           return res.status(409).json({
             success: false,
-            error: 'One or more requested slots are full',
+            error:
+              'One or more requested slots are already booked',
           });
         }
       }
 
-      // Creation is pending, NOT confirmed.
-      // Final capacity protection occurs during approval.
+      // ---------- Insert ----------
       const { data: booking, error: insertError } =
         await supabase
           .from('bookings')
@@ -344,9 +471,10 @@ router.post(
             profile_id: req.bookingProfile.profile_id,
             club_id: null,
             venue_id: venueId,
+            booking_type: bookingType,
             event_name: event_name.trim(),
             purpose: purpose.trim(),
-            expected_attendees,
+            expected_attendees: attendees,
             start_time: new Date(start_time).toISOString(),
             end_time: new Date(end_time).toISOString(),
             date: new Date(start_time).toISOString(),
@@ -354,7 +482,9 @@ router.post(
             quoted_rate: quotedRate.toFixed(2),
             quoted_deposit: quotedDeposit.toFixed(2),
           })
-          .select('booking_id, venue_id, status, start_time, end_time')
+          .select(
+            'booking_id, venue_id, booking_type, status, start_time, end_time, quoted_rate, quoted_deposit'
+          )
           .single();
 
       if (insertError) throw insertError;

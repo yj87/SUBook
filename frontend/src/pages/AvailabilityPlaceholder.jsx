@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { getCalendarDays } from '../utils/availabilityCalendar';
@@ -9,6 +8,8 @@ const OPENING_HOUR = 8;
 const CLOSING_HOUR = 24;
 const TIME_ZONE = 'Asia/Kuala_Lumpur';
 const TIME_ZONE_OFFSET = '+08:00';
+const MAX_DAILY_DAYS = 7;
+const SLOTS_PER_DAY = CLOSING_HOUR - OPENING_HOUR;
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
@@ -19,6 +20,13 @@ const monthKey = (date) =>
 
 const parseDateKey = (value) =>
   new Date(`${value}T00:00:00${TIME_ZONE_OFFSET}`);
+
+const addDays = (key, n) => {
+  const [y, m, d] = key.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
+};
 
 const todayKey = () => {
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -61,7 +69,7 @@ const formatSlot = (slot) =>
 // Generate 16 hourly slots: 8 AM until midnight.
 function getSlots(date) {
   return Array.from(
-    { length: CLOSING_HOUR - OPENING_HOUR },
+    { length: SLOTS_PER_DAY },
     (_, index) => {
       const startHour = OPENING_HOUR + index;
 
@@ -69,7 +77,6 @@ function getSlots(date) {
         `${date}T${pad(startHour)}:00:00${TIME_ZONE_OFFSET}`
       );
 
-      // Adding one hour handles 11 PM -> midnight correctly.
       const end = new Date(start.getTime() + 3600000);
 
       return {
@@ -135,20 +142,22 @@ export default function AvailabilityPlaceholder() {
   const [availabilitySlots, setAvailabilitySlots] = useState([]);
 
   const [month, setMonth] = useState(() => {
-    const now = new Date();
     const localToday = todayKey();
     const [year, monthNumber] = localToday.split('-').map(Number);
     return new Date(year, monthNumber - 1, 1);
   });
 
+  // Hourly mode
   const [selectedDate, setSelectedDate] = useState('');
-
-  // IMPORTANT:
-  // Use an array of selected slots instead of one selectedSlot.
   const [selectedRange, setSelectedRange] = useState([]);
+
+  // Daily mode
+  const [bookingMode, setBookingMode] = useState('hourly');
+  const [dailyDates, setDailyDates] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectionError, setSelectionError] = useState('');
   const [retryToken, setRetryToken] = useState(0);
 
   const monthValue = monthKey(month);
@@ -157,11 +166,7 @@ export default function AvailabilityPlaceholder() {
 
   const currentMonth = useMemo(() => {
     const [year, monthNumber] = monthValue.split('-').map(Number);
-
-    return {
-      year,
-      month: monthNumber - 1,
-    };
+    return { year, month: monthNumber - 1 };
   }, [monthValue]);
 
   const calendarDays = useMemo(
@@ -187,25 +192,24 @@ export default function AvailabilityPlaceholder() {
     )
       .then(async (response) => {
         const result = await response.json();
-
         if (!response.ok) {
           throw new Error(
             result.error || 'Unable to retrieve booking availability'
           );
         }
-
         return result.data;
       })
       .then((result) => {
         if (!result?.venue || !Array.isArray(result.slots)) {
           throw new Error('Invalid availability response from server');
         }
-
         setVenue(result.venue);
         setAvailabilitySlots(result.slots);
-
         setSelectedDate((current) =>
           current.startsWith(monthValue) ? current : ''
+        );
+        setDailyDates((current) =>
+          current.filter((d) => d.startsWith(monthValue))
         );
       })
       .catch((fetchError) => {
@@ -237,12 +241,8 @@ export default function AvailabilityPlaceholder() {
 
   const slotsForDate = (date) => {
     return getSlots(date).map((slot) => {
-      const apiSlot = slotStatusByStart.get(
-        slot.start.getTime()
-      );
-
+      const apiSlot = slotStatusByStart.get(slot.start.getTime());
       const reserved = apiSlot?.status === 'fully booked';
-
       const unavailable =
         venue?.venue_status !== 'available' ||
         slot.start <= new Date() ||
@@ -260,10 +260,7 @@ export default function AvailabilityPlaceholder() {
   };
 
   const selectedSlots = useMemo(() => {
-    if (!selectedDate || !venue) {
-      return [];
-    }
-
+    if (!selectedDate || !venue) return [];
     return slotsForDate(selectedDate);
   }, [selectedDate, venue, slotStatusByStart]);
 
@@ -272,114 +269,205 @@ export default function AvailabilityPlaceholder() {
   // ========================================
 
   const dateStatus = (date) => {
-    if (!date || date < today) {
-      return 'unavailable';
-    }
-
-    if (venue?.venue_status !== 'available') {
-      return 'unavailable';
-    }
+    if (!date || date < today) return 'unavailable';
+    if (venue?.venue_status !== 'available') return 'unavailable';
 
     const slots = slotsForDate(date);
 
     if (slots.every((slot) => slot.unavailable)) {
       return 'unavailable';
     }
-
-    if (
-      slots.every(
-        (slot) => slot.unavailable || slot.reserved
-      )
-    ) {
+    if (slots.every((slot) => slot.unavailable || slot.reserved)) {
       return 'reserved';
     }
-
     return 'available';
   };
 
+  // In Daily mode, a date is bookable only if every slot has at least 1 spot.
+  const isDateFullyBookable = (date) => {
+    if (!date || date < today) return false;
+    if (venue?.venue_status !== 'available') return false;
+    return slotsForDate(date).every(
+      (s) => !s.unavailable && s.status !== 'fully booked'
+    );
+  };
+
+  // Human-readable reason why a date can't be added to a daily range.
+  const dailyBlockReason = (date) => {
+    if (!date) return '';
+    if (date < today) return 'Date is in the past';
+    if (venue?.venue_status !== 'available') return 'Venue is unavailable';
+    const slots = slotsForDate(date);
+    if (slots.every((s) => s.unavailable)) return 'No time left on this date';
+    const blocked = slots.find((s) => s.status === 'fully booked');
+    if (blocked) {
+      return `Slot ${formatHour(blocked.startHour)} is already fully booked`;
+    }
+    return '';
+  };
+
   // ========================================
-  // MULTIPLE SLOT SELECTION LOGIC
+  // HOURLY SLOT SELECTION
   // ========================================
 
   const chooseSlot = (slot) => {
-    if (slot.unavailable || slot.reserved) {
-      return;
-    }
+    if (slot.unavailable || slot.reserved) return;
 
     setSelectedRange((current) => {
-      // First selected slot.
-      if (current.length === 0) {
-        return [slot];
-      }
+      if (current.length === 0) return [slot];
 
       const first = current[0];
       const last = current[current.length - 1];
-
       const clickedIndex = current.findIndex(
         (item) => item.id === slot.id
       );
 
-      // Clicking the only selected slot clears selection.
-      if (clickedIndex === 0 && current.length === 1) {
-        return [];
-      }
+      if (clickedIndex === 0 && current.length === 1) return [];
+      if (clickedIndex === 0) return current.slice(1);
+      if (clickedIndex === current.length - 1) return current.slice(0, -1);
+      if (clickedIndex > 0) return current.slice(0, clickedIndex);
 
-      // Clicking the first selected slot removes it.
-      if (clickedIndex === 0) {
-        return current.slice(1);
-      }
-
-      // Clicking the last selected slot removes it.
-      if (clickedIndex === current.length - 1) {
-        return current.slice(0, -1);
-      }
-
-      // Clicking inside the selected range shortens the range.
-      if (clickedIndex > 0) {
-        return current.slice(0, clickedIndex);
-      }
-
-      // Extend selection backwards by one hour.
-      if (
-        slot.end.getTime() === first.start.getTime()
-      ) {
+      if (slot.end.getTime() === first.start.getTime()) {
         return [slot, ...current];
       }
-
-      // Extend selection forwards by one hour.
-      if (
-        slot.start.getTime() === last.end.getTime()
-      ) {
+      if (slot.start.getTime() === last.end.getTime()) {
         return [...current, slot];
       }
-
-      // Clicking a non-adjacent available slot starts a new range.
       return [slot];
     });
   };
 
-  const chooseDate = (date) => {
-    if (!date || dateStatus(date) === 'unavailable') {
+  // ========================================
+  // DAILY DATE-RANGE SELECTION (consecutive only)
+  // ========================================
+
+      const chooseDailyDate = (date) => {
+    if (!date) return;
+
+    // Case 1: no selection yet — start the range.
+    if (dailyDates.length === 0) {
+      if (!isDateFullyBookable(date)) {
+        setSelectionError(
+          `Can't start on ${SHORT_DATE_FORMATTER.format(
+            parseDateKey(date)
+          )} — ${dailyBlockReason(date)}.`
+        );
+        return;
+      }
+      setSelectionError('');
+      setDailyDates([date]);
       return;
     }
 
-    setSelectedDate(date);
+    const sorted = [...dailyDates].sort();
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
 
-    // Clear selection whenever the user chooses a date.
-    setSelectedRange([]);
+    // Case 2: clicking an already-selected date.
+    if (dailyDates.includes(date)) {
+      if (dailyDates.length === 1) {
+        setSelectionError('');
+        setDailyDates([]);
+        return;
+      }
+
+      if (date === first) {
+        setSelectionError('');
+        setDailyDates(sorted.slice(1));
+        return;
+      }
+      if (date === last) {
+        setSelectionError('');
+        setDailyDates(sorted.slice(0, -1));
+        return;
+      }
+
+      setSelectionError(
+        `You can only remove days from the ends of your range. Tap ${SHORT_DATE_FORMATTER.format(
+          parseDateKey(first)
+        )} or ${SHORT_DATE_FORMATTER.format(
+          parseDateKey(last)
+        )} to shrink the range.`
+      );
+      return;
+    }
+
+    // Case 3: clicked inside the span but not selected — ignore.
+    if (date > first && date < last) {
+      return;
+    }
+
+    // Case 4: try to extend the range — must be exactly ±1 day.
+    const isForward = date === addDays(last, 1);
+    const isBackward = date === addDays(first, -1);
+
+    if (isForward || isBackward) {
+      if (dailyDates.length >= MAX_DAILY_DAYS) {
+        setSelectionError(
+          `Maximum ${MAX_DAILY_DAYS} consecutive days per booking.`
+        );
+        return;
+      }
+      if (!isDateFullyBookable(date)) {
+        setSelectionError(
+          `Can't add ${SHORT_DATE_FORMATTER.format(
+            parseDateKey(date)
+          )} — ${dailyBlockReason(date)}.`
+        );
+        return;
+      }
+      setSelectionError('');
+      const next = isForward
+        ? [...dailyDates, date].sort()
+        : [date, ...dailyDates].sort();
+      setDailyDates(next);
+      return;
+    }
+
+    // Case 5: non-consecutive click.
+    setSelectionError(
+    <>
+      You picked {SHORT_DATE_FORMATTER.format(parseDateKey(date))},
+      but days must be consecutive (no gaps). Your range is{" "}
+      {SHORT_DATE_FORMATTER.format(parseDateKey(first))} –{" "}
+      {SHORT_DATE_FORMATTER.format(parseDateKey(last))}. Please select{" "}
+      <b>the day just before or after your current range</b> to extend it,
+      or tap a selected date again to remove it.
+    </>
+    );
   };
 
+  // Unified "is this date highlighted?" for the current mode.
+  const isDateSelectedForMode = (date) => {
+    if (bookingMode === 'daily') return dailyDates.includes(date);
+    return date === selectedDate;
+  };
+
+  // Route calendar clicks to the right handler.
+  const chooseDate = (date) => {
+    if (bookingMode === 'daily') {
+      chooseDailyDate(date);
+      return;
+    }
+    if (!date || dateStatus(date) === 'unavailable') return;
+    setSelectedDate(date);
+    setSelectedRange([]);
+    setSelectionError('');
+  };
+
+  // Month navigation.
   const moveMonth = (offset) => {
     const next = new Date(
       month.getFullYear(),
       month.getMonth() + offset,
       1
     );
-
     if (monthKey(next) >= minimumMonth) {
       setMonth(next);
       setSelectedDate('');
       setSelectedRange([]);
+      setDailyDates([]);
+      setSelectionError('');
     }
   };
 
@@ -388,8 +476,7 @@ export default function AvailabilityPlaceholder() {
   // ========================================
 
   const rangeStart = selectedRange[0] || null;
-  const rangeEnd =
-    selectedRange[selectedRange.length - 1] || null;
+  const rangeEnd = selectedRange[selectedRange.length - 1] || null;
 
   const selectedDateLabel = selectedDate
     ? SHORT_DATE_FORMATTER.format(parseDateKey(selectedDate))
@@ -402,59 +489,85 @@ export default function AvailabilityPlaceholder() {
 
   const durationHours =
     rangeStart && rangeEnd
-      ? (rangeEnd.end.getTime() -
-        rangeStart.start.getTime()) / 3600000
+      ? (rangeEnd.end.getTime() - rangeStart.start.getTime()) / 3600000
       : 0;
 
   const hourlyRate = Number(venue?.hourly_rate || 0);
+  const dailyRate = Number(venue?.daily_rate || 0);
+  const hourlyDeposit = Number(venue?.hourly_deposit || 0);
+  const dailyDeposit = Number(venue?.daily_deposit || 0);
 
-  const totalRate = hourlyRate * durationHours;
+  const sortedDaily = useMemo(
+    () => [...dailyDates].sort(),
+    [dailyDates]
+  );
+  const dailyStartDate = sortedDaily[0] || '';
+  const dailyEndDate = sortedDaily[sortedDaily.length - 1] || '';
 
-  const estimatedRate = durationHours
-    ? `RM${totalRate.toFixed(2)}`
-    : '—';
+  const dailyStart = dailyStartDate
+    ? new Date(`${dailyStartDate}T08:00:00${TIME_ZONE_OFFSET}`)
+    : null;
 
-  // Always use the newest availability data.
+  const dailyEnd = dailyEndDate
+    ? new Date(
+        new Date(`${dailyEndDate}T00:00:00${TIME_ZONE_OFFSET}`).getTime() +
+          86400000
+      )
+    : null;
+
+  const totalRate =
+    bookingMode === 'daily'
+      ? dailyRate * dailyDates.length
+      : hourlyRate * durationHours;
+
+  const estimatedRate =
+    bookingMode === 'daily'
+      ? dailyDates.length
+        ? `RM${totalRate.toFixed(2)}`
+        : '—'
+      : durationHours
+        ? `RM${totalRate.toFixed(2)}`
+        : '—';
+
+  const displayedDeposit =
+    bookingMode === 'daily' ? dailyDeposit : hourlyDeposit;
+
   const canContinue =
     !loading &&
     !error &&
-    selectedDate &&
-    selectedRange.length > 0 &&
-    selectedRange.every((slot) => {
-      const currentSlot = selectedSlots.find(
-        (item) => item.id === slot.id
-      );
-
-      return (
-        currentSlot &&
-        !currentSlot.unavailable &&
-        !currentSlot.reserved
-      );
-    });
+    (bookingMode === 'daily'
+      ? dailyDates.length > 0 && !!venue
+      : selectedDate &&
+        selectedRange.length > 0 &&
+        selectedRange.every((slot) => {
+          const currentSlot = selectedSlots.find(
+            (item) => item.id === slot.id
+          );
+          return (
+            currentSlot &&
+            !currentSlot.unavailable &&
+            !currentSlot.reserved
+          );
+        }));
 
   // ========================================
   // CONTINUE TO BOOKING FORM
   // ========================================
 
   const handleContinue = async () => {
-    if (!canContinue || !rangeStart || !rangeEnd) {
-      return;
-    }
+    if (!canContinue) return;
 
     try {
       setError('');
+      setSelectionError('');
 
-      // Revalidate availability before proceeding.
       const response = await fetch(
         `${API}/api/venues/${encodeURIComponent(venueId)}/availability?month=${monthValue}`
       );
-
       const result = await response.json();
 
       if (!response.ok || !Array.isArray(result.data?.slots)) {
-        throw new Error(
-          result.error || 'Unable to verify availability'
-        );
+        throw new Error(result.error || 'Unable to verify availability');
       }
 
       const currentSlots = new Map(
@@ -464,9 +577,42 @@ export default function AvailabilityPlaceholder() {
         ])
       );
 
+      if (bookingMode === 'daily') {
+        const stillOk = dailyDates.every((d) =>
+          getSlots(d).every((slot) => {
+            const latest = currentSlots.get(slot.start.getTime());
+            return (
+              latest &&
+              latest.status !== 'fully booked' &&
+              latest.status !== 'unavailable' &&
+              slot.start.getTime() > Date.now()
+            );
+          })
+        );
+
+        if (!stillOk) {
+          setSelectionError(
+            'One or more days are no longer fully available. Please reselect.'
+          );
+          return;
+        }
+
+        const params = new URLSearchParams({
+          bookingType: 'daily',
+          venueId: venue.venue_id,
+          dates: sortedDaily.join(','),
+          startTime: dailyStart.toISOString(),
+          endTime: dailyEnd.toISOString(),
+          days: String(dailyDates.length),
+        });
+
+        navigate(`/booking-request?${params.toString()}`);
+        return;
+      }
+
+      // Hourly
       const stillAvailable = selectedRange.every((slot) => {
         const latest = currentSlots.get(slot.start.getTime());
-
         return (
           latest &&
           (latest.status === 'available' ||
@@ -484,6 +630,7 @@ export default function AvailabilityPlaceholder() {
       }
 
       const params = new URLSearchParams({
+        bookingType: 'hourly',
         venueId: venue.venue_id,
         date: selectedDate,
         startTime: rangeStart.start.toISOString(),
@@ -539,20 +686,15 @@ export default function AvailabilityPlaceholder() {
       </header>
 
       <main className="mx-auto max-w-[1280px] px-5 pb-24 pt-7 sm:px-[60px]">
-        {/* LOADING */}
         {loading && (
           <p className="mt-10 text-[#6B6468]">
             Loading availability...
           </p>
         )}
 
-        {/* ERROR */}
         {!loading && error && (
           <div className="mt-6 rounded-xl border border-[#E3DEE0] bg-white p-5">
-            <p className="text-sm text-red-700">
-              {error}
-            </p>
-
+            <p className="text-sm text-red-700">{error}</p>
             <button
               type="button"
               onClick={() => setRetryToken((v) => v + 1)}
@@ -570,12 +712,83 @@ export default function AvailabilityPlaceholder() {
             </h1>
 
             <p className="mt-1 text-sm text-[#6B6468]">
-              Check colour indicators, then choose available
-              consecutive time slots.
+              {bookingMode === 'hourly'
+                ? 'Pick a date, then choose consecutive hour slots.'
+                : `Pick consecutive days (max ${MAX_DAILY_DAYS}). Click the first date, then click the next day to extend the range.`}
             </p>
 
-            <div className="mt-7 grid gap-6 xl:grid-cols-[520px_300px_295px]">
+            {/* MODE TOGGLE */}
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-[560px]">
+              <button
+                type="button"
+                onClick={() => {
+                  setBookingMode('hourly');
+                  setDailyDates([]);
+                  setSelectionError('');
+                }}
+                className={`flex flex-col items-start gap-1 rounded-xl border-2 px-4 py-3 text-left transition-all ${
+                  bookingMode === 'hourly'
+                    ? 'border-[#7A1F3D] bg-[#FAF3F6] ring-2 ring-[#7A1F3D]/20'
+                    : 'border-[#E3DEE0] bg-white hover:border-[#7A1F3D]'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
+                      bookingMode === 'hourly'
+                        ? 'border-[#7A1F3D] bg-[#7A1F3D]'
+                        : 'border-[#B8B0B3] bg-white'
+                    }`}
+                  >
+                    {bookingMode === 'hourly' && (
+                      <span className="h-2 w-2 rounded-full bg-white" />
+                    )}
+                  </span>
+                  <span className="text-base font-bold text-[#1F1A1C]">
+                    Book by Hour
+                  </span>
+                </div>
+                <span className="pl-7 text-xs text-[#6B6468]">
+                  Choose specific time slots (1–16 hours)
+                </span>
+              </button>
 
+              <button
+                type="button"
+                onClick={() => {
+                  setBookingMode('daily');
+                  setSelectedRange([]);
+                  setSelectionError('');
+                }}
+                className={`flex flex-col items-start gap-1 rounded-xl border-2 px-4 py-3 text-left transition-all ${
+                  bookingMode === 'daily'
+                    ? 'border-[#7A1F3D] bg-[#FAF3F6] ring-2 ring-[#7A1F3D]/20'
+                    : 'border-[#E3DEE0] bg-white hover:border-[#7A1F3D]'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
+                      bookingMode === 'daily'
+                        ? 'border-[#7A1F3D] bg-[#7A1F3D]'
+                        : 'border-[#B8B0B3] bg-white'
+                    }`}
+                  >
+                    {bookingMode === 'daily' && (
+                      <span className="h-2 w-2 rounded-full bg-white" />
+                    )}
+                  </span>
+                  <span className="text-base font-bold text-[#1F1A1C]">
+                    Book by Day
+                  </span>
+                </div>
+                <span className="pl-7 text-xs text-[#6B6468]">
+                  Whole days (8 AM–12 AM), up to {MAX_DAILY_DAYS} consecutive days
+                </span>
+              </button>
+            </div>
+
+            <div className="mt-7 grid gap-6 xl:grid-cols-[520px_300px_295px]">
               {/* CALENDAR */}
               <section
                 className="rounded-xl border border-[#E3DEE0] bg-white p-4 sm:p-5"
@@ -595,7 +808,6 @@ export default function AvailabilityPlaceholder() {
                     >
                       ‹
                     </button>
-
                     <button
                       type="button"
                       onClick={() => moveMonth(1)}
@@ -615,25 +827,29 @@ export default function AvailabilityPlaceholder() {
                 <div className="mt-2 grid grid-cols-7 gap-1.5">
                   {calendarDays.map((date, index) => {
                     const status = dateStatus(date);
-                    const selected = date === selectedDate;
+                    const selected = isDateSelectedForMode(date);
+                    const disabled =
+                      !date ||
+                      (bookingMode === 'daily'
+                        ? !isDateFullyBookable(date)
+                        : status === 'unavailable');
 
                     return (
                       <button
                         key={date || `empty-${index}`}
                         type="button"
-                        disabled={
-                          !date || status === 'unavailable'
-                        }
+                        disabled={disabled}
                         onClick={() => chooseDate(date)}
                         aria-pressed={selected}
                         className={`aspect-square rounded-lg border border-[#E3DEE0] p-2 text-left text-[13px]
-                          ${selected
-                            ? 'bg-[#CDEFD6] font-bold'
-                            : status === 'reserved'
-                              ? 'bg-[#F8D7DA]'
-                              : status === 'unavailable'
-                                ? 'bg-[#E5E5E5] text-[#6B6468]'
-                                : 'bg-white hover:border-[#7A1F3D]'
+                          ${
+                            selected
+                              ? 'bg-[#CDEFD6] font-bold'
+                              : status === 'reserved'
+                                ? 'bg-[#F8D7DA]'
+                                : status === 'unavailable'
+                                  ? 'bg-[#E5E5E5] text-[#6B6468]'
+                                  : 'bg-white hover:border-[#7A1F3D]'
                           }
                           ${!date ? 'invisible' : ''}
                         `}
@@ -647,113 +863,159 @@ export default function AvailabilityPlaceholder() {
                 <AvailabilityLegend />
               </section>
 
-              {/* MULTIPLE TIME SLOT SELECTOR */}
-              <section aria-label="Time slots">
-                <h2 className="text-base font-bold">
-                  Time slots
-                  {selectedDate
-                    ? ` – ${selectedDateLabel}`
-                    : ''}
-                </h2>
+              {/* HOUR OR DAY SELECTOR */}
+              {bookingMode === 'hourly' ? (
+                <section aria-label="Time slots">
+                  <h2 className="text-base font-bold">
+                    Time slots
+                    {selectedDate ? ` – ${selectedDateLabel}` : ''}
+                  </h2>
 
-                {!selectedDate && (
-                  <p className="mt-4 text-sm text-[#6B6468]">
-                    Select a date to view time slots.
-                  </p>
-                )}
+                  {!selectedDate && (
+                    <p className="mt-4 text-sm text-[#6B6468]">
+                      Select a date to view time slots.
+                    </p>
+                  )}
 
-                {selectedDate && (
-                  <div className="mt-4 space-y-2.5">
-                    {selectedSlots.map((slot) => {
-                      const isSelected = selectedRange.some(
-                        (item) => item.id === slot.id
-                      );
+                  {selectedDate && (
+                    <div className="mt-4 space-y-2.5">
+                      {selectedSlots.map((slot) => {
+                        const isSelected = selectedRange.some(
+                          (item) => item.id === slot.id
+                        );
+                        const disabled =
+                          slot.unavailable || slot.reserved;
 
-                      const disabled =
-                        slot.unavailable || slot.reserved;
+                        let statusLabel = 'Available';
+                        if (slot.unavailable) statusLabel = 'Unavailable';
+                        else if (slot.reserved) statusLabel = 'Reserved';
+                        else if (isSelected) statusLabel = 'Selected';
+                        else if (slot.status === 'partially booked') {
+                          statusLabel = `${slot.remaining} left`;
+                        }
 
-                      let statusLabel = 'Available';
+                        return (
+                          <button
+                            key={slot.id}
+                            type="button"
+                            disabled={disabled}
+                            onClick={() => chooseSlot(slot)}
+                            aria-pressed={isSelected}
+                            className={`flex min-h-[46px] w-full items-center justify-between rounded-lg border px-4 text-left text-[13px] transition-colors
+                              ${
+                                slot.unavailable
+                                  ? 'border-[#E3DEE0] bg-[#E5E5E5]'
+                                  : slot.reserved
+                                    ? 'border-[#E3DEE0] bg-[#F8D7DA]'
+                                    : isSelected
+                                      ? 'border-[#6DAB7A] bg-[#CDEFD6]'
+                                      : 'border-[#E3DEE0] bg-white hover:border-[#7A1F3D]'
+                              }
+                            `}
+                          >
+                            <span>{formatSlot(slot)}</span>
+                            <span className="text-xs font-semibold text-[#6B6468]">
+                              {statusLabel}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              ) : (
+                <section aria-label="Daily selection summary">
+                  <h2 className="text-base font-bold">Selected days</h2>
 
-                      if (slot.unavailable) {
-                        statusLabel = 'Unavailable';
-                      } else if (slot.reserved) {
-                        statusLabel = 'Reserved';
-                      } else if (isSelected) {
-                        statusLabel = 'Selected';
-                      } else if (
-                        slot.status === 'partially booked'
-                      ) {
-                        statusLabel =
-                          `${slot.remaining} left`;
-                      }
+                  {selectionError && (
+                    <p className="mt-2 rounded-lg bg-[#FEF2F2] border border-[#FECACA] px-3 py-2 text-xs text-[#7A1F3D]">
+                      {selectionError}
+                    </p>
+                  )}
 
-                      return (
-                        <button
-                          key={slot.id}
-                          type="button"
-                          disabled={disabled}
-                          onClick={() => chooseSlot(slot)}
-                          aria-pressed={isSelected}
-                          className={`flex min-h-[46px] w-full items-center justify-between rounded-lg border px-4 text-left text-[13px] transition-colors
-                            ${slot.unavailable
-                              ? 'border-[#E3DEE0] bg-[#E5E5E5]'
-                              : slot.reserved
-                                ? 'border-[#E3DEE0] bg-[#F8D7DA]'
-                                : isSelected
-                                  ? 'border-[#6DAB7A] bg-[#CDEFD6]'
-                                  : 'border-[#E3DEE0] bg-white hover:border-[#7A1F3D]'
-                            }
-                          `}
+                  {dailyDates.length === 0 && (
+                    <p className="mt-4 text-sm text-[#6B6468]">
+                      Pick 1–{MAX_DAILY_DAYS} consecutive dates from the calendar.
+                    </p>
+                  )}
+
+                  {dailyDates.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      {sortedDaily.map((d) => (
+                        <div
+                          key={d}
+                          className="flex min-h-[42px] items-center justify-between rounded-lg border border-[#6DAB7A] bg-[#CDEFD6] px-4 text-[13px]"
                         >
-                          <span>{formatSlot(slot)}</span>
-
-                          <span className="text-xs font-semibold text-[#6B6468]">
-                            {statusLabel}
+                          <span>
+                            {SHORT_DATE_FORMATTER.format(parseDateKey(d))}
                           </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
+                          <span className="text-xs font-semibold text-[#17703A]">
+                            Full day
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
 
               {/* BOOKING SUMMARY */}
               <aside
                 className="h-fit rounded-xl border border-[#E3DEE0] bg-white p-5"
                 aria-label="Booking summary"
               >
-                <h2 className="text-base font-bold">
-                  Estimated fee
-                </h2>
+                <h2 className="text-base font-bold">Estimated fee</h2>
 
                 <div className="mt-5 space-y-3 text-[13px] text-[#6B6468]">
-                  <p>
-                    Venue: {venue.venue_name}
-                  </p>
+                  <p>Venue: {venue.venue_name}</p>
 
-                  <p>
-                    Date: {selectedDate
-                      ? `${selectedDateLabel} ${selectedDate.slice(0, 4)}`
-                      : '—'}
-                  </p>
+                  {bookingMode === 'hourly' && (
+                    <>
+                      <p>
+                        Date:{' '}
+                        {selectedDate
+                          ? `${selectedDateLabel} ${selectedDate.slice(0, 4)}`
+                          : '—'}
+                      </p>
+                      <p>Time: {selectedTimeLabel}</p>
+                      <p>
+                        Duration:{' '}
+                        {durationHours
+                          ? `${durationHours} hour${
+                              durationHours === 1 ? '' : 's'
+                            }`
+                          : '—'}
+                      </p>
+                      <p>
+                        Hourly rate:{' '}
+                        {venue.hourly_rate != null
+                          ? `RM${Number(venue.hourly_rate).toFixed(2)}`
+                          : '—'}
+                      </p>
+                    </>
+                  )}
 
-                  <p>
-                    Time: {selectedTimeLabel}
-                  </p>
-
-                  <p>
-                    Duration:{' '}
-                    {durationHours
-                      ? `${durationHours} hour${durationHours === 1 ? '' : 's'}`
-                      : '—'}
-                  </p>
-
-                  <p>
-                    Hourly rate:{' '}
-                    {venue.hourly_rate != null
-                      ? `RM${Number(venue.hourly_rate).toFixed(2)}`
-                      : '—'}
-                  </p>
+                  {bookingMode === 'daily' && (
+                    <>
+                      <p>Days: {dailyDates.length || '—'}</p>
+                      <p>
+                        Dates:{' '}
+                        {dailyDates.length
+                          ? `${SHORT_DATE_FORMATTER.format(
+                              parseDateKey(dailyStartDate)
+                            )} – ${SHORT_DATE_FORMATTER.format(
+                              parseDateKey(dailyEndDate)
+                            )}`
+                          : '—'}
+                      </p>
+                      <p>
+                        Daily rate:{' '}
+                        {venue.daily_rate != null
+                          ? `RM${Number(venue.daily_rate).toFixed(2)}`
+                          : '—'}
+                      </p>
+                    </>
+                  )}
 
                   <p className="font-semibold text-[#1F1A1C]">
                     Estimated rental: {estimatedRate}
@@ -761,8 +1023,8 @@ export default function AvailabilityPlaceholder() {
 
                   <p>
                     Deposit:{' '}
-                    {venue.hourly_deposit != null
-                      ? `RM${Number(venue.hourly_deposit).toFixed(2)}`
+                    {displayedDeposit != null
+                      ? `RM${displayedDeposit.toFixed(2)}`
                       : '—'}
                   </p>
                 </div>
@@ -776,10 +1038,17 @@ export default function AvailabilityPlaceholder() {
                   Continue
                 </button>
 
-                {selectedRange.length > 0 && (
+                {bookingMode === 'hourly' && selectedRange.length > 0 && (
                   <p className="mt-3 text-center text-xs text-[#6B6468]">
-                    {selectedRange.length} consecutive
-                    hour{selectedRange.length === 1 ? '' : 's'} selected
+                    {selectedRange.length} consecutive hour
+                    {selectedRange.length === 1 ? '' : 's'} selected
+                  </p>
+                )}
+
+                {bookingMode === 'daily' && dailyDates.length > 0 && (
+                  <p className="mt-3 text-center text-xs text-[#6B6468]">
+                    {dailyDates.length} full day
+                    {dailyDates.length === 1 ? '' : 's'} selected
                   </p>
                 )}
               </aside>
