@@ -1,5 +1,6 @@
 
-import { useEffect, useMemo, useState } from 'react';
+import TopNavbar from '../components/TopNavbar';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { getCalendarDays } from '../utils/availabilityCalendar';
 import API from '../config/api';
@@ -503,39 +504,9 @@ export default function AvailabilityPlaceholder() {
   return (
     <div className="min-h-screen bg-[#F6F4F5] font-inter text-[#1F1A1C]">
       {/* NAVIGATION */}
-      <header className="border-b border-[#E3DEE0] bg-white">
-        <div className="mx-auto flex min-h-16 max-w-[1280px] flex-wrap items-center gap-x-14 gap-y-3 px-5 py-3 sm:px-[60px] lg:flex-nowrap lg:py-0">
-          <Link
-            to="/student-dashboard"
-            className="shrink-0 text-[22px] font-bold text-[#7A1F3D]"
-          >
-            SUBook
-          </Link>
+      <TopNavbar role="student" onProfileOpen={() => { }} />
+      {/* Original navigation header */}
 
-          <nav
-            aria-label="Main navigation"
-            className="flex flex-1 flex-wrap items-center justify-start gap-x-7 gap-y-2 text-sm lg:justify-between"
-          >
-            {navigation.map(([label, path]) => (
-              <a
-                key={label}
-                href={path}
-                className={
-                  label === 'Book Venue'
-                    ? 'font-semibold text-[#7A1F3D]'
-                    : 'hover:text-[#7A1F3D]'
-                }
-              >
-                {label}
-              </a>
-            ))}
-          </nav>
-
-          <span className="rounded-lg bg-[#7A1F3D] px-6 py-[10px] text-[13px] font-semibold text-white">
-            Student
-          </span>
-        </div>
-      </header>
 
       <main className="mx-auto max-w-[1280px] px-5 pb-24 pt-7 sm:px-[60px]">
         {/* LOADING */}
