@@ -230,16 +230,16 @@ export default function ProfileModal({ isOpen, onClose }) {
             )}
 
             <div className="flex gap-4">
-              <button onClick={stopCamera} className="px-6 py-2 border border-gray-400 rounded-lg hover:bg-gray-100 font-semibold">Cancel</button>
+              <button onClick={stopCamera} className="px-6 py-2 border border-gray-400 rounded-lg hover:bg-gray-100 font-semibold cursor-pointer">Cancel</button>
               {!cameraError && (
-                <button onClick={capturePhoto} className="px-6 py-2 bg-[#7A1F3D] text-white rounded-lg hover:bg-[#5c162d] font-semibold">Capture Photo</button>
+                <button onClick={capturePhoto} className="px-6 py-2 bg-[#7A1F3D] text-white rounded-lg hover:bg-[#5c162d] font-semibold cursor-pointer">Capture Photo</button>
               )}
             </div>
           </div>
         ) : null}
 
         {/* REGULAR MODAL CONTENT */}
-        <button onClick={onClose} className="absolute top-8 right-8 text-gray-500 hover:text-black transition-colors">
+        <button onClick={onClose} className="absolute top-8 right-8 text-gray-500 hover:text-black transition-colors cursor-pointer">
           <svg width="38" height="38" viewBox="0 0 38 38" fill="none">
             <path d="M10.1334 30.0834L7.91675 27.8667L16.7834 19L7.91675 10.1334L10.1334 7.91669L19.0001 16.7834L27.8667 7.91669L30.0834 10.1334L21.2167 19L30.0834 27.8667L27.8667 30.0834L19.0001 21.2167L10.1334 30.0834Z" fill="currentColor"/>
           </svg>
@@ -286,7 +286,7 @@ export default function ProfileModal({ isOpen, onClose }) {
                   <button 
                     onClick={() => setShowAvatarMenu(!showAvatarMenu)}
                     disabled={loading}
-                    className="flex items-center gap-2 border border-gray-400 rounded-[10px] px-4 py-2 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                    className="flex items-center gap-2 border border-gray-400 rounded-[10px] px-4 py-2 hover:bg-gray-50 transition-colors disabled:opacity-50 cursor-pointer"
                   >
                     <svg width="24" height="24" viewBox="0 0 31 30" fill="none">
                       <path d="M27.125 18.75V23.75C27.125 24.413 26.8528 25.0489 26.3684 25.5178C25.8839 25.9866 25.2268 26.25 24.5417 26.25H6.45833C5.77319 26.25 5.11611 25.9866 4.63164 25.5178C4.14717 25.0489 3.875 24.413 3.875 23.75V18.75M9.04167 10L15.5 3.75L21.9583 10M15.5 3.75V18.75" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" stroke="#1E1E1E"/>
@@ -296,17 +296,17 @@ export default function ProfileModal({ isOpen, onClose }) {
 
                   {showAvatarMenu && (
                     <div className="absolute top-12 right-0 w-48 bg-white border border-gray-200 rounded-lg shadow-xl py-1 z-50 flex flex-col">
-                      <button onClick={() => fileInputRef.current.click()} className="text-left px-4 py-2 hover:bg-gray-50 text-sm text-gray-700">
+                      <button onClick={() => fileInputRef.current.click()} className="text-left px-4 py-2 hover:bg-gray-50 text-sm text-gray-700 cursor-pointer">
                         Upload from device
                       </button>
-                      <button onClick={startCamera} className="text-left px-4 py-2 hover:bg-gray-50 text-sm text-gray-700">
+                      <button onClick={startCamera} className="text-left px-4 py-2 hover:bg-gray-50 text-sm text-gray-700 cursor-pointer">
                         Take a photo
                       </button>
-                      <button onClick={handleUseGoogleAvatar} className="text-left px-4 py-2 hover:bg-gray-50 text-sm text-gray-700">
+                      <button onClick={handleUseGoogleAvatar} className="text-left px-4 py-2 hover:bg-gray-50 text-sm text-gray-700 cursor-pointer">
                         Use Google picture
                       </button>
                       <div className="border-t border-gray-100 my-1"></div>
-                      <button onClick={handleRemoveAvatar} className="text-left px-4 py-2 hover:bg-red-50 text-sm text-red-600">
+                      <button onClick={handleRemoveAvatar} className="text-left px-4 py-2 hover:bg-red-50 text-sm text-red-600 cursor-pointer">
                         Remove picture
                       </button>
                     </div>
@@ -316,7 +316,7 @@ export default function ProfileModal({ isOpen, onClose }) {
                 <button 
                   onClick={handleRemoveAvatar}
                   disabled={loading} 
-                  className="border border-red-600 rounded-[10px] p-2 hover:bg-red-50 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                  className="border border-red-600 rounded-[10px] p-2 hover:bg-red-50 transition-colors disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer"
                 >
                   <svg width="24" height="24" viewBox="0 0 27 28" fill="none">
                     <path d="M3.375 6.99998H5.625M5.625 6.99998H23.625M5.625 6.99998L5.625 23.3333C5.625 23.9522 5.86205 24.5456 6.28401 24.9832C6.70597 25.4208 7.27826 25.6666 7.875 25.6666H19.125C19.7217 25.6666 20.294 25.4208 20.716 24.9832C21.1379 24.5456 21.375 23.9522 21.375 23.3333V6.99998M9 6.99998V4.66665C9 4.04781 9.23705 3.45432 9.65901 3.01673C10.081 2.57915 10.6533 2.33331 11.25 2.33331H15.75C16.3467 2.33331 16.919 2.57915 17.341 3.01673C17.7629 3.45432 18 4.04781 18 4.66665V6.99998M11.25 12.8333V19.8333M15.75 12.8333V19.8333" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" stroke="#C00F0C"/>
@@ -363,8 +363,8 @@ export default function ProfileModal({ isOpen, onClose }) {
             </div>
 
             <div className="flex justify-center gap-10 mt-12">
-              <button onClick={onClose} className="w-[258px] h-[51px] border border-gray-500 rounded-[10px] text-2xl font-bold hover:bg-gray-100 transition-colors">Close</button>
-              <button onClick={handleSave} disabled={loading} className="w-[258px] h-[51px] bg-[#7A1F3D] text-white rounded-[10px] text-2xl font-bold hover:bg-[#5c162d] transition-colors disabled:opacity-70">
+              <button onClick={onClose} className="w-[258px] h-[51px] border border-gray-500 rounded-[10px] text-2xl font-bold hover:bg-gray-100 transition-colors cursor-pointer">Close</button>
+              <button onClick={handleSave} disabled={loading} className="w-[258px] h-[51px] bg-[#7A1F3D] text-white rounded-[10px] text-2xl font-bold hover:bg-[#5c162d] transition-colors disabled:opacity-70 cursor-pointer">
                 {loading ? 'Saving...' : 'Save Changes'}
               </button>
             </div>

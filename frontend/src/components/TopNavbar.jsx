@@ -5,6 +5,7 @@ import { supabase } from '../supabaseClient';
 export default function TopNavbar({ role, onProfileOpen }) {
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const navigate = useNavigate();
   const navRef = useRef(null);
 
@@ -25,8 +26,20 @@ export default function TopNavbar({ role, onProfileOpen }) {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate('/login');
+    setLoggingOut(true);
+    sessionStorage.removeItem('intended_portal');
+
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      console.error('Logout error:', error.message);
+      setLoggingOut(false);
+      return;
+    }
+
+    setTimeout(() => {
+      window.location.replace('/login');
+    }, 600);
   };
 
   const isStudent = role === 'student';
@@ -38,39 +51,37 @@ export default function TopNavbar({ role, onProfileOpen }) {
 
   return (
     <header className="w-full bg-white border-b border-[#E3DEE0] h-16 flex items-center justify-between px-6 md:px-12 shrink-0 relative z-50 font-inter" ref={navRef}>
-      
+
       <div className="flex items-center gap-4 md:gap-24">
-        <button 
-          className="md:hidden text-[#1F1A1C] p-2 -ml-2" 
+        <button
+          className="md:hidden text-[#1F1A1C] p-2 -ml-2"
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
         </button>
 
-        {/* SUBook Text Logo */}
         <div onClick={() => navigate(homePath)} className="cursor-pointer">
           <h1 className="text-[#7A1F3D] text-[22px] font-bold">SUBook</h1>
         </div>
-        
-        {/* DESKTOP NAVIGATION */}
+
         <nav className="hidden md:flex gap-16 text-sm font-semibold text-[#1F1A1C]">
-          <button onClick={() => navigate(homePath)} className={`py-4 ${isStudent ? "text-[#7A1F3D]" : "hover:text-[#7A1F3D]"}`}>{homeLabel}</button>
-          
+          <button onClick={() => navigate(homePath)} className={`py-4 ${isStudent ? "text-[#7A1F3D] cursor-pointer" : "hover:text-[#7A1F3D] cursor-pointer"}`}>{homeLabel}</button>
+
           <div className="relative">
-            <button onClick={() => toggleDropdown('venue')} className="flex items-center gap-1 hover:text-[#7A1F3D] py-4">
+            <button onClick={() => toggleDropdown('venue')} className="flex items-center gap-1 hover:text-[#7A1F3D] py-4 cursor-pointer" >
               Venue & Booking
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 15L7 10H17L12 15Z" fill="currentColor"/></svg>
             </button>
             {activeDropdown === 'venue' && (
               <div className="absolute top-14 left-0 w-48 bg-white border border-[#E3DEE0] rounded-lg shadow-lg py-1 flex flex-col">
-                <button onClick={() => { navigate('/venues'); setActiveDropdown(null); }} className="text-left px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold text-[#1F1A1C]">Book Venue</button>
+                <button onClick={() => { navigate('/venues'); setActiveDropdown(null); }} className="text-left px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold text-[#1F1A1C] cursor-pointer">Book Venue</button>
                 <a href="#" className="px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold text-[#1F1A1C]">Booking History</a>
               </div>
             )}
           </div>
 
           <div className="relative">
-            <button onClick={() => toggleDropdown('events')} className="flex items-center gap-1 hover:text-[#7A1F3D] py-4">
+            <button onClick={() => toggleDropdown('events')} className="flex items-center gap-1 hover:text-[#7A1F3D] py-4 cursor-pointer">
               Events
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 15L7 10H17L12 15Z" fill="currentColor"/></svg>
             </button>
@@ -87,14 +98,14 @@ export default function TopNavbar({ role, onProfileOpen }) {
             )}
           </div>
 
-          <div className="relative">
-            <button onClick={() => toggleDropdown('help')} className={`flex items-center gap-1 py-4 ${!isStudent ? "text-[#7A1F3D]" : "hover:text-[#7A1F3D]"}`}>
+          <div className="relative cursor-pointer">
+            <button onClick={() => toggleDropdown('help')} className={`flex items-center gap-1 py-4 ${!isStudent ? "text-[#7A1F3D] cursor-pointer" : "hover:text-[#7A1F3D] cursor-pointer"}`}>
               Help & Support
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 15L7 10H17L12 15Z" fill="currentColor"/></svg>
             </button>
             {activeDropdown === 'help' && (
               <div className="absolute top-14 left-0 w-48 bg-white border border-[#E3DEE0] rounded-lg shadow-lg py-1 flex flex-col">
-                <button onClick={() => { navigate(faqPath); setActiveDropdown(null); }} className="text-left px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold text-[#1F1A1C]">FAQ</button>
+                <button onClick={() => { navigate(faqPath); setActiveDropdown(null); }} className="text-left px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold text-[#1F1A1C] cursor-pointer">FAQ</button>
                 <a href="https://docs.google.com/forms/d/e/1FAIpQLScKPJLpauxqEzx6vavNyKgUUw9oVKgYx7L5wcDPizUSjgvgig/viewform?usp=publish-editor" target="_blank" rel="noreferrer" className="px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold text-[#1F1A1C]">Lost Item</a>
                 <a href="https://docs.google.com/forms/d/e/1FAIpQLSeE1J0a6KQTBnpRSbUyvReN9HSOOXqBgGY2fvxkH32g2ULMWA/viewform?usp=publish-editor" target="_blank" rel="noreferrer" className="px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold text-[#1F1A1C]">Feedback</a>
               </div>
@@ -103,8 +114,7 @@ export default function TopNavbar({ role, onProfileOpen }) {
         </nav>
       </div>
 
-      {/* ROLE DROPDOWN */}
-      <div className="relative">
+      <div className="relative cursor-pointer">
         <button onClick={() => toggleDropdown('role')} className="flex items-center gap-2 bg-[#7A1F3D] text-white px-4 md:px-5 py-2 rounded-lg text-[13px] font-semibold cursor-pointer">
           <span>{roleLabel}</span>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -113,21 +123,29 @@ export default function TopNavbar({ role, onProfileOpen }) {
         </button>
         {activeDropdown === 'role' && (
           <div className="absolute top-12 right-0 w-48 bg-white border border-[#E3DEE0] rounded-lg shadow-lg py-1 flex flex-col">
-            <button onClick={() => { onProfileOpen(true); setActiveDropdown(null); }} className="text-left px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold text-[#1F1A1C]">Profile Settings</button>
+            <button onClick={() => { onProfileOpen(true); setActiveDropdown(null); }} className="text-left px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold text-[#1F1A1C] cursor-pointer">Profile Settings</button>
             <div className="border-t border-gray-100 my-1"></div>
-            <button onClick={handleLogout} className="text-left px-4 py-3 hover:bg-red-50 text-sm font-semibold text-red-600">Logout</button>
+            <button
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className="flex items-center gap-2 text-left px-4 py-3 hover:bg-red-50 text-sm font-semibold text-red-600 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+            >
+              {loggingOut && (
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-600 border-t-transparent" />
+              )}
+              {loggingOut ? 'Logging out…' : 'Logout'}
+            </button>
           </div>
         )}
       </div>
 
-      {/* MOBILE MENU */}
       {isMobileMenuOpen && (
         <div className="md:hidden absolute top-16 left-0 w-full bg-white border-b border-[#E3DEE0] shadow-lg z-40 flex flex-col py-2 font-inter">
-          <button onClick={() => { setIsMobileMenuOpen(false); navigate(homePath); }} className="text-left w-full px-6 py-3 text-[#7A1F3D] text-sm font-semibold border-b border-gray-100">{homeLabel}</button>
-          
-          <div className="px-6 py-2 border-b border-gray-100">
-            <p className="text-xs text-gray-400 font-bold uppercase mb-1">Venue & Booking</p>
-            <button onClick={() => { setIsMobileMenuOpen(false); navigate('/venues'); }} className="block w-full text-left py-1 text-[13px] font-semibold text-[#1F1A1C]">Book Venue</button>
+          <button onClick={() => { setIsMobileMenuOpen(false); navigate(homePath); }} className="text-left w-full px-6 py-3 text-[#7A1F3D] text-sm font-semibold border-b border-gray-100 cursor-pointer">{homeLabel}</button>
+
+          <div className="px-6 py-2 border-b border-gray-100 cursor-pointer">
+            <p className="text-xs text-gray-400 font-bold uppercase mb-1 cursor-pointer">Venue & Booking</p>
+            <button onClick={() => { setIsMobileMenuOpen(false); navigate('/venues'); }} className="block w-full text-left py-1 text-[13px] font-semibold text-[#1F1A1C] cursor-pointer">Book Venue</button>
             <a href="#" className="block py-1 text-[13px] font-semibold text-[#1F1A1C]">Booking History</a>
           </div>
 
@@ -142,7 +160,7 @@ export default function TopNavbar({ role, onProfileOpen }) {
             )}
           </div>
 
-          <div className="px-6 py-2 border-b border-gray-100">
+          <div className="px-6 py-2 border-b border-gray-100 cursor-pointer">
             <p className="text-xs text-gray-400 font-bold uppercase mb-1">Help & Support</p>
             <button onClick={() => { setIsMobileMenuOpen(false); navigate(faqPath); }} className="block py-1 text-[13px] font-semibold text-[#1F1A1C]">FAQ</button>
             <a href="https://docs.google.com/forms/d/e/1FAIpQLScKPJLpauxqEzx6vavNyKgUUw9oVKgYx7L5wcDPizUSjgvgig/viewform?usp=publish-editor" target="_blank" rel="noreferrer" className="block py-1 text-[13px] font-semibold text-[#1F1A1C]">Lost Item</a>
