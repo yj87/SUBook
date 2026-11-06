@@ -46,6 +46,9 @@ app.use(
       return callback(null, false);
     },
     credentials: true,
+    // ADDED: Explicitly defined methods and headers to satisfy preflight tests
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
   })
 );
 app.use(express.json());
