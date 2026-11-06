@@ -38,10 +38,10 @@ export default function StudentDashboard() {
             One centralized platform for UTM students, clubs and societies.
           </p>
           <div className="flex flex-wrap gap-4 mt-4">
-            <button onClick={() => window.location.href='/venues'} className="bg-[#F2B705] text-[#1F1A1C] font-semibold text-[13px] w-[160px] py-3 rounded-lg hover:bg-yellow-500 transition-colors flex justify-center items-center">
+            <button onClick={() => window.location.href='/venues'} className="bg-[#F2B705] text-[#1F1A1C] font-semibold text-[13px] w-[160px] py-3 rounded-lg hover:bg-yellow-500 transition-colors flex justify-center items-center cursor-pointer">
               Book Venue
             </button>
-            <button className="border border-white text-white font-semibold text-[13px] w-[160px] py-3 rounded-lg hover:bg-white/10 transition-colors flex justify-center items-center">
+            <button className="border border-white text-white font-semibold text-[13px] w-[160px] py-3 rounded-lg hover:bg-white/10 transition-colors flex justify-center items-center cursor-pointer">
               Browse Events
             </button>
           </div>
@@ -74,7 +74,7 @@ export default function StudentDashboard() {
         )}
       </main>
 
-      <button className="fixed bottom-8 right-8 bg-[#7A1F3D] w-16 h-16 rounded-full flex items-center justify-center shadow-lg hover:bg-[#5c162d] transition-colors z-50">
+      <button className="fixed bottom-8 right-8 bg-[#7A1F3D] w-16 h-16 rounded-full flex items-center justify-center shadow-lg hover:bg-[#5c162d] transition-colors z-50 cursor-pointer">
         <span className="text-white text-lg font-bold">AI</span>
       </button>
 
