@@ -2,8 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { getCalendarDays } from '../utils/availabilityCalendar';
-
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import API from '../config/api';
 
 const OPENING_HOUR = 8;
 const CLOSING_HOUR = 24;
