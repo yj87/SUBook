@@ -17,6 +17,7 @@ import AdminLoginPage from './pages/AdminLoginPage'
 import ClubRepLoginPage from './pages/ClubRepLoginPage'
 import StudentFAQPage from './pages/StudentFAQ'; 
 import ClubFAQPage from './pages/ClubFAQ';
+import BookingConfirmationPage from './pages/BookingConfirmationPage';
 
 
 function App() {
@@ -43,6 +44,7 @@ function App() {
           <Route path="/venues/:venueId" element={<VenueDetails />} />
           <Route path="/venues/:venueId/availability" element={<AvailabilityPlaceholder />} />
           <Route path="/booking-request" element={<BookingRequestPlaceholder />} />
+          <Route path="/booking-request/success" element={<BookingConfirmationPage />} />
         </Route>
 
         {/* STUDENT ROUTES ONLY */}
