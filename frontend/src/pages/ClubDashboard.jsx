@@ -100,10 +100,10 @@ export default function ClubDashboard() {
         </div>
 
         <div className="flex flex-wrap gap-4 mb-8">
-          <button onClick={() => window.location.href='/venues'} className="bg-[#7A1F3D] text-white text-[13px] font-semibold w-full sm:w-[180px] py-3 rounded-lg hover:bg-[#5c162d] transition-colors">
+          <button onClick={() => window.location.href='/venues'} className="bg-[#7A1F3D] text-white text-[13px] font-semibold w-full sm:w-[180px] py-3 rounded-lg hover:bg-[#5c162d] transition-colors cursor-pointer">
             Book Venue
           </button>
-          <button className="bg-[#F2B705] text-[#1F1A1C] text-[13px] font-semibold w-full sm:w-[180px] py-3 rounded-lg hover:bg-yellow-500 transition-colors">
+          <button className="bg-[#F2B705] text-[#1F1A1C] text-[13px] font-semibold w-full sm:w-[180px] py-3 rounded-lg hover:bg-yellow-600 transition-colors cursor-pointer">
             Publish Event
           </button>
         </div>

@@ -3,18 +3,29 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import TopNavbar from '../components/TopNavbar';
 import ProfileModal from '../components/ProfileModal';
 import { supabase } from '../supabaseClient';
+import { fetchVenue } from '../config/api';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+const facilitiesByVenue = {
+  'dance studio': ['Wi-Fi', 'Air-conditioned', 'PA System', 'Projector', 'No Shoes Area'],
+  'seminar hall': ['Wi-Fi', 'Air-conditioned', 'PA System', 'Projector & LCD', 'Pantry', 'Preparation Room', 'Banquet Chairs & Round Tables'],
+  'small meeting room': ['Wi-Fi','Air-conditioned', 'Chairs','Smart TV', 'Cabinet', 'Meeting Table'],
+  'union parliament committee': ['Wi-Fi','Air-conditioned', 'Chairs', 'Cabinet', 'Meeting Table'],
+  'common meeting room': ['Wi-Fi','Air-conditioned', 'Chairs','Smart TV', 'Cabinet', 'Meeting Table'],
+  'activity hall': ['Wi-Fi','Air-conditioned', 'Open Lounge','Sofa','Bar Table', 'Round Tables'],
+  'open space': ['Wi-Fi','Open Space','Fan + Lamp']
+};
 
 const photoByVenue = {
-  'dance studio': 'Dance Studio.png',
-  'seminar hall': 'Seminar Hall.png',
-  'small meeting room': 'Small Meeting Room.png',
-  'union parliament committee': 'Union Parliament Committee.png',
-  'common meeting room': 'Common Meeting Room.png',
-  'activity hall': 'Activity Hall.png',
-  'open space': 'Open Space.png',
+  'dance studio': ['Dance Studio.png', 'Dance Studio2.png'],
+  'seminar hall': ['Seminar Hall.png', 'Seminar Hall2.png'],
+  'small meeting room': ['Small Meeting Room.png', 'Small Meeting Room2.png'],
+  'union parliament committee': ['Union Parliament Committee.png', 'Union Parliament Committee2.png'],
+  'common meeting room': ['Common Meeting Room.png', 'Common Meeting Room2.png'],
+  'activity hall': ['Activity Hall.png', 'Activity Hall2.png'],
+  'open space': ['Open Space.png', 'Open Space2.png']
 };
+
 
 const money = (value) => (
   value == null || value === '' || !Number.isFinite(Number(value))
@@ -51,32 +62,67 @@ export default function VenueDetails() {
   }, []);
 
   
-  useEffect(() => {
-    const controller = new AbortController();
+useEffect(() => {
+  let cancelled = false;
 
-    async function loadVenue() {
-      setLoading(true);
-      setError('');
-      try {
-        const response = await fetch(`${API}/api/venues/${encodeURIComponent(venueId)}`, { signal: controller.signal });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Unable to retrieve venue');
-        setVenue(result.data);
-      } catch (fetchError) {
-        if (fetchError.name !== 'AbortError') setError(fetchError.message);
-      } finally {
-        if (!controller.signal.aborted) setLoading(false);
-      }
+  async function loadVenue() {
+    setLoading(true);
+    setError('');
+    try {
+      const result = await fetchVenue(venueId);
+      if (cancelled) return;
+      setVenue(result.data);
+    } catch (err) {
+      if (!cancelled) setError(err.message);
+    } finally {
+      if (!cancelled) setLoading(false);
     }
+  }
 
-    loadVenue();
-    return () => controller.abort();
-  }, [venueId]);
+  loadVenue();
+  return () => { cancelled = true; };
+}, [venueId]);
 
+  // Build list of image URLs for the current venue
+  // Build list of image URLs for the current venue
+  // Build list of facilities for the current venue
+const facilities = useMemo(() => {
+  const list = facilitiesByVenue[String(venue?.venue_name || '').toLowerCase().trim()];
+  return list ? list : [];
+}, [venue]);
   const photos = useMemo(() => {
-    const photo = photoByVenue[String(venue?.venue_name || '').toLowerCase().trim()];
-    return photo ? [`/venue-images/${photo}`] : [];
+    const photoList = photoByVenue[String(venue?.venue_name || '').toLowerCase().trim()];
+    if (!photoList) return [];
+    const list = Array.isArray(photoList) ? photoList : [photoList];
+    return list.map((p) => `/venue-images/${encodeURIComponent(p)}`);
   }, [venue]);
+
+
+
+  // Set initial selected photo when photos array changes
+  useEffect(() => {
+    if (photos.length > 0) {
+      setSelectedPhoto(photos[0]);
+    }
+  }, [photos]);
+
+  // Autoplay: cycle through photos every 3 seconds
+  useEffect(() => {
+    if (photos.length < 2) return;
+    const interval = setInterval(() => {
+      setSelectedPhoto((prev) => {
+        const current = prev || photos[0];
+        const currentIdx = photos.findIndex((p) => p === current);
+        const nextIdx = (currentIdx + 1) % photos.length;
+        return photos[nextIdx];
+      });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [photos]);
+
+
+
+
 
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center bg-[#F6F4F5] text-[#6B6468]" role="status">Loading venue details…</div>;
@@ -103,9 +149,18 @@ export default function VenueDetails() {
         <h1 className="text-[28px] font-bold sm:text-[32px]">{venue.venue_name} – Venue Details</h1>
         <div className="mt-7 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
           <section className="rounded-xl border border-[#E3DEE0] bg-white p-4 sm:p-5" aria-label={`${venue.venue_name} photos`}>
-            <div className="h-[260px] overflow-hidden rounded-lg bg-[#E9DDE1] sm:h-[390px]">
-              {activePhoto ? <img src={activePhoto} alt={venue.venue_name} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-sm text-[#6B6468]">Venue image unavailable</div>}
-            </div>
+                    <div className="rounded-lg bg-[#E9DDE1] flex items-center justify-center">
+          {activePhoto ? (
+            <img
+              src={activePhoto}
+              alt={venue.venue_name}
+              className="max-w-full max-h-[260px] sm:max-h-[390px] object-contain"
+            />
+          ) : (
+            <div className="text-sm text-[#6B6468]">Venue image unavailable</div>
+          )}
+        </div>
+
             {photos.length > 0 && (
               <div className="mt-3 flex gap-3">
                 {photos.map((photo) => <button type="button" key={photo} onClick={() => setSelectedPhoto(photo)} className={`h-16 w-20 overflow-hidden rounded-md border-2 ${selectedPhoto === photo ? 'border-[#7A1F3D]' : 'border-transparent'}`}><img src={photo} alt="" className="h-full w-full object-cover" /></button>)}
@@ -138,7 +193,11 @@ export default function VenueDetails() {
 
             <div className="mt-7 border-t border-[#E3DEE0] pt-5">
               <h3 className="text-base font-bold">Facilities</h3>
-              <p className="mt-2 text-sm leading-relaxed text-[#6B6468]">Facilities information is not included in the current venue catalogue data.</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-relaxed text-[#6B6468]">
+  {facilities.map((f) => (
+    <li key={f}>{f}</li>
+  ))}
+</ul>
             </div>
 
             <div className="mt-5 border-t border-[#E3DEE0] pt-5">

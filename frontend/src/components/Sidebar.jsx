@@ -1,5 +1,6 @@
 import { supabase } from '../supabaseClient';
 import { useNavigate, Link } from 'react-router-dom';
+import { useState } from 'react';
 
 // REPLACE THESE WITH YOUR ACTUAL GOOGLE FORM LINKS
 const FEEDBACK_URL = "https://forms.gle/YOUR_FEEDBACK_LINK";
@@ -7,12 +8,26 @@ const LOST_ITEM_URL = "https://forms.gle/YOUR_LOST_ITEM_LINK";
 
 export default function Sidebar({ role }) {
   const navigate = useNavigate();
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate('/login');
-  };
+  console.log('LOGOUT CLICKED');
+  setLoggingOut(true);
+  console.log('loggingOut set to true');
 
+  sessionStorage.removeItem('intended_portal');
+  const { error } = await supabase.auth.signOut();
+  console.log('signOut returned:', error);
+
+  if (error) {
+    setLoggingOut(false);
+    return;
+  }
+
+  setTimeout(() => {
+    window.location.replace('/login');
+  }, 600); // bump to 2s for testing
+};
   return (
     <div className="w-64 bg-white border-r border-[#E3DEE0] min-h-screen p-6 flex flex-col justify-between hidden md:flex">
       <div>
@@ -43,8 +58,11 @@ export default function Sidebar({ role }) {
         <a href={LOST_ITEM_URL} target="_blank" rel="noopener noreferrer" className="p-3 text-sm text-[#6B6468] hover:text-[#7A1F3D] font-medium">
           Report Lost Item ↗
         </a>
-        <button onClick={handleLogout} className="text-left p-3 text-red-600 font-medium hover:bg-red-50 rounded-lg mt-2">
-          Log Out
+        <button
+          onClick={handleLogout}
+          disabled={loggingOut}
+          className="text-left p-3 text-red-600 font-medium hover:bg-red-50 rounded-lg mt-2 disabled:opacity-60 disabled:cursor-not-allowed">
+          {loggingOut ? 'Logging out…' : 'Log Out'}
         </button>
       </div>
     </div>

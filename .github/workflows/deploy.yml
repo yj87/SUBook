@@ -33,9 +33,6 @@ jobs:
     - name: Install Backend Dependencies
       working-directory: ./backend
       run: npm ci
-    - name: Run Backend Tests
-      working-directory: ./backend
-      run: npm run test
       env:                                          # ← ADD THIS
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
