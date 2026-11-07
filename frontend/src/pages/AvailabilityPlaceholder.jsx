@@ -519,6 +519,7 @@ export default function AvailabilityPlaceholder() {
 
   return (
     <div className="min-h-screen bg-[#F6F4F5] font-inter text-[#1F1A1C]">
+      {/* NAVIGATION */}
       <TopNavbar role={role} onProfileOpen={setIsProfileOpen} />
 
       <main className="mx-auto max-w-[1280px] px-5 pb-24 pt-7 sm:px-[60px]">
@@ -541,6 +542,10 @@ export default function AvailabilityPlaceholder() {
 
         {!loading && venue && (
           <>
+          <button type="button" onClick={() => navigate(-1)} className="mb-5 inline-flex items-center gap-1 text-sm font-medium text-[#6B6468] hover:text-[#7A1F3D]">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+            Back
+          </button>
             <h1 className="text-[28px] font-bold">
               {venue.venue_name} – Select Date &amp; Time
             </h1>
