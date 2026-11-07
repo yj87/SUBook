@@ -145,7 +145,10 @@ const facilities = useMemo(() => {
       <TopNavbar role={role} onProfileOpen={setIsProfileOpen} />
 
       <main className="mx-auto max-w-[1280px] px-5 pb-24 pt-7 sm:px-[60px]">
-        <button type="button" onClick={() => navigate(-1)} className="mb-5 text-sm font-medium text-[#6B6468] hover:text-[#7A1F3D]">← Back</button>
+        <button type="button" onClick={() => navigate(-1)} className="mb-5 inline-flex items-center gap-1 text-sm font-medium text-[#6B6468] hover:text-[#7A1F3D]">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+            Back
+        </button>
         <h1 className="text-[28px] font-bold sm:text-[32px]">{venue.venue_name} – Venue Details</h1>
         <div className="mt-7 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
           <section className="rounded-xl border border-[#E3DEE0] bg-white p-4 sm:p-5" aria-label={`${venue.venue_name} photos`}>
