@@ -160,6 +160,27 @@ export default function BookingRequestPlaceholder() {
   const validate = () => {
     const errors = {};
 
+    const MIN_ADVANCE_DAYS = 3;
+    const startDate = new Date(startTime);
+    if (Number.isFinite(startDate.getTime())) {
+      const MY = 'Asia/Kuala_Lumpur';
+      const startParts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: MY, year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(startDate);                              // "YYYY-MM-DD"
+
+      const todayParts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: MY, year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(new Date());                             // "YYYY-MM-DD"
+
+      const startDay = new Date(`${startParts}T00:00:00+08:00`);
+      const todayDay = new Date(`${todayParts}T00:00:00+08:00`);
+      const diffDays = Math.round((startDay - todayDay) / 86400000);
+
+      if (diffDays < MIN_ADVANCE_DAYS) {
+        errors.general = `Bookings must be made at least ${MIN_ADVANCE_DAYS} calendar days in advance.`;
+      }
+    }
+
     if (!purpose || purpose.trim().length < 10) {
       errors.purpose = 'Please describe the purpose (at least 10 characters).';
     } else if (purpose.length > 2000) {
@@ -373,6 +394,12 @@ export default function BookingRequestPlaceholder() {
               The system checks for scheduling conflicts on submit.
             </p>
 
+            {fieldErrors.general && (
+              <div className="mt-4 rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs text-[#7A1F3D]">
+                {fieldErrors.general}
+              </div>
+            )}
+            
             {submitError && (
               <div className="mt-4 rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs text-[#7A1F3D]">
                 {submitError}

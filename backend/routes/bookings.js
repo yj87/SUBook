@@ -36,11 +36,8 @@ const ACTIVE_BOOKING_STATUSES = [
 
 const MAX_DAILY_DAYS = 7;
 
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-const isUUID = (value) =>
-  typeof value === 'string' && UUID_REGEX.test(value);
+// Bookings must start 3 days after today.
+const MIN_ADVANCE_DAYS = 3;
 
 // Return date and hour in Malaysia time.
 function malaysiaParts(date) {
@@ -66,6 +63,27 @@ function malaysiaParts(date) {
     minute: Number(parts.minute),
   };
 }
+
+// Returns true if the start date is >= today + MIN_ADVANCE_DAYS (Malaysia time).
+function meetsMinAdvance(startValue) {
+  const start = new Date(startValue);
+  if (!Number.isFinite(start.getTime())) return false;
+
+  const startDay = malaysiaParts(start).day;
+  const today = malaysiaParts(new Date()).day;
+
+  const todayDate = new Date(`${today}T00:00:00+08:00`);
+  const startDate = new Date(`${startDay}T00:00:00+08:00`);
+
+  const diffDays = (startDate - todayDate) / 86400000;
+  return diffDays >= MIN_ADVANCE_DAYS;
+}
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const isUUID = (value) =>
+  typeof value === 'string' && UUID_REGEX.test(value);
 
 // Validate one-hour slots between 8 AM and midnight.
 // Multiple consecutive hours are supported.
@@ -380,6 +398,13 @@ router.post(
           });
         }
 
+        if (!meetsMinAdvance(start_time)) {
+          return res.status(400).json({
+            success: false,
+            error: `Bookings must be made at least ${MIN_ADVANCE_DAYS} calendar days in advance.`,
+          });
+        }
+
         durationHours =
           (new Date(end_time) - new Date(start_time)) /
           3600000;
@@ -397,6 +422,12 @@ router.post(
           return res.status(400).json({
             success: false,
             error: rangeError,
+          });
+        }
+        if (!meetsMinAdvance(start_time)) {
+          return res.status(400).json({
+            success: false,
+            error: `Bookings must be made at least ${MIN_ADVANCE_DAYS} calendar days in advance.`,
           });
         }
 
@@ -495,7 +526,7 @@ router.post(
             start_time: new Date(start_time).toISOString(),
             end_time: new Date(end_time).toISOString(),
             date: new Date(start_time).toISOString(),
-            status: 'pending',
+            status: 'pending_approval',
             quoted_rate: quotedRate.toFixed(2),
             quoted_deposit: quotedDeposit.toFixed(2),
           })
