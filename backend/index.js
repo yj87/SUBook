@@ -15,7 +15,7 @@ app.get('/', (req, res) => res.send('Backend is running!'));
 console.log("=== CHECKING ROUTES ===");
 console.log("Booking Routes loaded:", typeof bookingRoutes);
 console.log("=======================");
-app.use('/api', bookingRoutes);
+app.use('/api/bookings', bookingRoutes);
 app.use('/api', venueRoutes);
 
 const PORT = process.env.PORT || 5000;

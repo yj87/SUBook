@@ -238,13 +238,14 @@ router.post(
   requireBookingUser,
   async (req, res) => {
     try {
-      const {
+        const {
         venueId,
         clubId = null,
         bookingType = 'hourly',
         dates = [],
         event_name,
         purpose,
+        phone_no,
         expected_attendees,
         start_time,
         end_time,
@@ -254,7 +255,6 @@ router.post(
       if (
         !isUUID(venueId) ||
         (clubId !== null && !isUUID(clubId)) ||
-        typeof event_name !== 'string' || !event_name.trim() ||
         typeof purpose !== 'string' || !purpose.trim()
       ) {
         return res.status(400).json({
@@ -263,10 +263,20 @@ router.post(
         });
       }
 
-      if (event_name.length > 200 || purpose.length > 2000) {
+      if (purpose.length > 2000) {
         return res.status(400).json({
           success: false,
-          error: 'Event name or purpose is too long',
+          error: 'Purpose is too long',
+        });
+      }
+
+      if (
+        event_name != null &&
+        (typeof event_name !== 'string' || event_name.length > 200)
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: 'Event name is too long',
         });
       }
 
@@ -472,7 +482,10 @@ router.post(
             club_id: null,
             venue_id: venueId,
             booking_type: bookingType,
-            event_name: event_name.trim(),
+            event_name:
+              typeof event_name === 'string' && event_name.trim()
+                ? event_name.trim()
+                : null,
             purpose: purpose.trim(),
             expected_attendees: attendees,
             start_time: new Date(start_time).toISOString(),
