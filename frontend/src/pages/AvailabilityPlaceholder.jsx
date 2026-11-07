@@ -30,6 +30,25 @@ const addDays = (key, n) => {
   return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
 };
 
+const MIN_ADVANCE_DAYS = 3;
+
+const minimumBookingDate = () => {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+
+  const v = Object.fromEntries(
+    parts.filter((p) => p.type !== 'literal').map((p) => [p.type, p.value])
+  );
+
+  const d = new Date(Date.UTC(Number(v.year), Number(v.month) - 1, Number(v.day)));
+  d.setUTCDate(d.getUTCDate() + MIN_ADVANCE_DAYS);
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+};
+
 const todayKey = () => {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: TIME_ZONE,
@@ -126,10 +145,16 @@ export default function AvailabilityPlaceholder() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectionError, setSelectionError] = useState('');
+  const [selectionHighlight, setSelectionHighlight] = useState('');
   const [retryToken, setRetryToken] = useState(0);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [role, setRole] = useState('student');
 
+const clearSelectionError = () => {
+  setSelectionError('');
+  setSelectionHighlight('');
+};
+  
   const monthValue = monthKey(month);
   const today = todayKey();
   const minimumMonth = today.slice(0, 7);
@@ -206,10 +231,12 @@ export default function AvailabilityPlaceholder() {
   }, [availabilitySlots]);
 
   const slotsForDate = (date) => {
+    const tooSoon = date < minimumBookingDate();
     return getSlots(date).map((slot) => {
       const apiSlot = slotStatusByStart.get(slot.start.getTime());
       const reserved = apiSlot?.status === 'fully booked';
       const unavailable =
+        tooSoon ||
         venue?.venue_status !== 'available' ||
         slot.start <= new Date() ||
         !apiSlot ||
@@ -230,7 +257,7 @@ export default function AvailabilityPlaceholder() {
   }, [selectedDate, venue, slotStatusByStart]);
 
   const dateStatus = (date) => {
-    if (!date || date < today) return 'unavailable';
+    if (!date || date < minimumBookingDate()) return 'unavailable';
     if (venue?.venue_status !== 'available') return 'unavailable';
     const slots = slotsForDate(date);
     if (slots.every((slot) => slot.unavailable)) return 'unavailable';
@@ -239,7 +266,7 @@ export default function AvailabilityPlaceholder() {
   };
 
   const isDateFullyBookable = (date) => {
-    if (!date || date < today) return false;
+    if (!date || date < minimumBookingDate()) return false;
     if (venue?.venue_status !== 'available') return false;
     return slotsForDate(date).every(
       (s) => !s.unavailable && s.status !== 'fully booked'
@@ -248,7 +275,7 @@ export default function AvailabilityPlaceholder() {
 
   const dailyBlockReason = (date) => {
     if (!date) return '';
-    if (date < today) return 'Date is in the past';
+    if (date < minimumBookingDate()) return 'Bookings require at least 3 calendar days notice';
     if (venue?.venue_status !== 'available') return 'Venue is unavailable';
     const slots = slotsForDate(date);
     if (slots.every((s) => s.unavailable)) return 'No time left on this date';
@@ -284,9 +311,10 @@ export default function AvailabilityPlaceholder() {
         setSelectionError(
           `Can't start on ${SHORT_DATE_FORMATTER.format(parseDateKey(date))} — ${dailyBlockReason(date)}.`
         );
+        setSelectionHighlight('');
         return;
       }
-      setSelectionError('');
+      clearSelectionError();
       setDailyDates([date]);
       return;
     }
@@ -297,23 +325,24 @@ export default function AvailabilityPlaceholder() {
 
     if (dailyDates.includes(date)) {
       if (dailyDates.length === 1) {
-        setSelectionError('');
+        clearSelectionError();
         setDailyDates([]);
         return;
       }
       if (date === first) {
-        setSelectionError('');
+        clearSelectionError();
         setDailyDates(sorted.slice(1));
         return;
       }
       if (date === last) {
-        setSelectionError('');
+        clearSelectionError();
         setDailyDates(sorted.slice(0, -1));
         return;
       }
       setSelectionError(
         `You can only remove days from the ends of your range. Tap ${SHORT_DATE_FORMATTER.format(parseDateKey(first))} or ${SHORT_DATE_FORMATTER.format(parseDateKey(last))} to shrink the range.`
       );
+      setSelectionHighlight('');
       return;
     }
 
@@ -325,15 +354,17 @@ export default function AvailabilityPlaceholder() {
     if (isForward || isBackward) {
       if (dailyDates.length >= MAX_DAILY_DAYS) {
         setSelectionError(`Maximum ${MAX_DAILY_DAYS} consecutive days per booking.`);
+        setSelectionHighlight('');
         return;
       }
       if (!isDateFullyBookable(date)) {
         setSelectionError(
           `Can't add ${SHORT_DATE_FORMATTER.format(parseDateKey(date))} — ${dailyBlockReason(date)}.`
         );
+        setSelectionHighlight('');
         return;
       }
-      setSelectionError('');
+      clearSelectionError();
       const next = isForward
         ? [...dailyDates, date].sort()
         : [date, ...dailyDates].sort();
@@ -341,9 +372,10 @@ export default function AvailabilityPlaceholder() {
       return;
     }
 
-    setSelectionError(
-      `You picked ${SHORT_DATE_FORMATTER.format(parseDateKey(date))}, but days must be consecutive (no gaps). Your range is ${SHORT_DATE_FORMATTER.format(parseDateKey(first))} – ${SHORT_DATE_FORMATTER.format(parseDateKey(last))}. Please select the day just before or after your current range to extend it, or tap a selected date again to remove it.`
-    );
+  setSelectionError(
+    `You picked ${SHORT_DATE_FORMATTER.format(parseDateKey(date))}, but days must be consecutive (no gaps).\nYour range: ${SHORT_DATE_FORMATTER.format(parseDateKey(first))} – ${SHORT_DATE_FORMATTER.format(parseDateKey(last))}.\nPlease pick a day just before or after your range to extend it, or tap a selected date again to remove it.`
+  );
+  setSelectionHighlight('consecutive (no gaps)');
   };
 
   const isDateSelectedForMode = (date) => {
@@ -352,14 +384,29 @@ export default function AvailabilityPlaceholder() {
   };
 
   const chooseDate = (date) => {
+    if (!date) return;
+
+    if (date < minimumBookingDate()) {
+      setSelectionError(
+      'Bookings require at least 3 calendar days advance notice.\nEarliest available date: ' +
+      SHORT_DATE_FORMATTER.format(
+        new Date(`${minimumBookingDate()}T00:00:00+08:00`)
+      )
+    );
+      setSelectionHighlight('3 calendar days');
+      setSelectedDate('');
+      setSelectedRange([]);
+      return;
+    }
+
     if (bookingMode === 'daily') {
       chooseDailyDate(date);
       return;
     }
-    if (!date || dateStatus(date) === 'unavailable') return;
+    if (dateStatus(date) === 'unavailable') return;
     setSelectedDate(date);
     setSelectedRange([]);
-    setSelectionError('');
+    clearSelectionError();
   };
 
   const moveMonth = (offset) => {
@@ -369,7 +416,7 @@ export default function AvailabilityPlaceholder() {
       setSelectedDate('');
       setSelectedRange([]);
       setDailyDates([]);
-      setSelectionError('');
+      clearSelectionError();
     }
   };
 
@@ -443,7 +490,7 @@ export default function AvailabilityPlaceholder() {
 
     try {
       setError('');
-      setSelectionError('');
+      clearSelectionError();
 
       const response = await fetch(
         `${API}/api/venues/${encodeURIComponent(venueId)}/availability?month=${monthValue}`
@@ -473,6 +520,7 @@ export default function AvailabilityPlaceholder() {
 
         if (!stillOk) {
           setSelectionError('One or more days are no longer fully available. Please reselect.');
+          setSelectionHighlight('');
           return;
         }
 
@@ -562,7 +610,7 @@ export default function AvailabilityPlaceholder() {
                 onClick={() => {
                   setBookingMode('hourly');
                   setDailyDates([]);
-                  setSelectionError('');
+                  clearSelectionError();
                 }}
                 className={`flex flex-col items-start gap-1 rounded-xl border-2 px-4 py-3 text-left transition-all ${
                   bookingMode === 'hourly'
@@ -594,7 +642,7 @@ export default function AvailabilityPlaceholder() {
                 onClick={() => {
                   setBookingMode('daily');
                   setSelectedRange([]);
-                  setSelectionError('');
+                  clearSelectionError();
                 }}
                 className={`flex flex-col items-start gap-1 rounded-xl border-2 px-4 py-3 text-left transition-all ${
                   bookingMode === 'daily'
@@ -653,13 +701,17 @@ export default function AvailabilityPlaceholder() {
                     <span key={index}>{day}</span>
                   ))}
                 </div>
-
+                  
                 <div className="mt-2 grid grid-cols-7 gap-1.5">
                   {calendarDays.map((date, index) => {
                     const status = dateStatus(date);
                     const selected = isDateSelectedForMode(date);
+                                        const tooSoon =
+                      !!date && date < minimumBookingDate();
+
                     const disabled =
                       !date ||
+                      tooSoon ||
                       (bookingMode === 'daily'
                         ? !isDateFullyBookable(date)
                         : status === 'unavailable');
@@ -668,18 +720,48 @@ export default function AvailabilityPlaceholder() {
                       <button
                         key={date || `empty-${index}`}
                         type="button"
-                        disabled={disabled}
-                        onClick={() => chooseDate(date)}
+                        aria-disabled={disabled}
+                        onClick={() => {
+                          if (!date) return;
+                          if (tooSoon) {
+                            setSelectionError(
+                            'Bookings require at least 3 calendar days advance notice.\nEarliest available date: ' + 
+                            SHORT_DATE_FORMATTER.format(new Date(`${minimumBookingDate()}T00:00:00+08:00`))
+                            );
+                            setSelectionHighlight('3 calendar days');
+                            setSelectedDate('');
+                            setSelectedRange([]);
+                            return;
+                          }
+                          if (bookingMode === 'daily' && !isDateFullyBookable(date)) {
+                            setSelectionError(
+                              `Cannot select ${SHORT_DATE_FORMATTER.format(parseDateKey(date))}: ${dailyBlockReason(date)}`
+                            );
+                            setSelectionHighlight('');
+                            return;
+                          }
+                          if (bookingMode === 'hourly' && status === 'unavailable') {
+                            return;
+                          }
+                          chooseDate(date);
+                        }}
                         aria-pressed={selected}
+                        title={
+                          tooSoon
+                            ? 'Bookings require at least 3 calendar days advance notice'
+                            : undefined
+                        }
                         className={`aspect-square rounded-lg border border-[#E3DEE0] p-2 text-left text-[13px]
                           ${
                             selected
                               ? 'bg-[#CDEFD6] font-bold'
-                              : status === 'reserved'
-                                ? 'bg-[#F8D7DA]'
-                                : status === 'unavailable'
-                                  ? 'bg-[#E5E5E5] text-[#6B6468]'
-                                  : 'bg-white hover:border-[#7A1F3D]'
+                              : tooSoon
+                                ? 'bg-[#E5E5E5] text-[#9C9598] cursor-not-allowed'
+                                : status === 'reserved'
+                                  ? 'bg-[#F8D7DA]'
+                                  : status === 'unavailable'
+                                    ? 'bg-[#E5E5E5] text-[#6B6468] cursor-not-allowed'
+                                    : 'bg-white hover:border-[#7A1F3D]'
                           }
                           ${!date ? 'invisible' : ''}
                         `}
@@ -693,12 +775,27 @@ export default function AvailabilityPlaceholder() {
                 <AvailabilityLegend />
               </section>
 
-              {bookingMode === 'hourly' ? (
+                {bookingMode === 'hourly' ? (
                 <section aria-label="Time slots">
                   <h2 className="text-base font-bold">
                     Time slots
                     {selectedDate ? ` – ${selectedDateLabel}` : ''}
                   </h2>
+
+                  {selectionError && (
+                  <p className="mt-2 whitespace-pre-line rounded-lg bg-[#FEF2F2] border border-[#FECACA] px-3 py-2 text-xs text-[#7A1F3D]">
+                    {selectionHighlight && selectionError.includes(selectionHighlight)
+                      ? selectionError.split(selectionHighlight).map((part, i, arr) => (
+                      <span key={i}>
+                        {part}
+                        {i < arr.length - 1 && (
+                      <strong className="font-semibold">{selectionHighlight}</strong>
+                      )}
+                      </span>
+                      ))
+                    : selectionError}
+                    </p>
+                  )}
 
                   {!selectedDate && (
                     <p className="mt-4 text-sm text-[#6B6468]">
@@ -756,8 +853,17 @@ export default function AvailabilityPlaceholder() {
                   <h2 className="text-base font-bold">Selected days</h2>
 
                   {selectionError && (
-                    <p className="mt-2 rounded-lg bg-[#FEF2F2] border border-[#FECACA] px-3 py-2 text-xs text-[#7A1F3D]">
-                      {selectionError}
+                  <p className="mt-2 whitespace-pre-line rounded-lg bg-[#FEF2F2] border border-[#FECACA] px-3 py-2 text-xs text-[#7A1F3D]">
+                    {selectionHighlight && selectionError.includes(selectionHighlight)
+                      ? selectionError.split(selectionHighlight).map((part, i, arr) => (
+                      <span key={i}>
+                        {part}
+                        {i < arr.length - 1 && (
+                      <strong className="font-semibold">{selectionHighlight}</strong>
+                      )}
+                      </span>
+                      ))
+                    : selectionError}
                     </p>
                   )}
 
