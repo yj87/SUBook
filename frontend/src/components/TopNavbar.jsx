@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom'; // Imported useLocation
 import { supabase } from '../supabaseClient';
 
 export default function TopNavbar({ role, onProfileOpen }) {
@@ -7,6 +7,7 @@ export default function TopNavbar({ role, onProfileOpen }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation(); // Get current URL
   const navRef = useRef(null);
 
   useEffect(() => {
@@ -49,6 +50,13 @@ export default function TopNavbar({ role, onProfileOpen }) {
   const faqPath = isStudent ? '/student-faq' : '/club-faq';
   const roleLabel = isStudent ? 'Student' : 'Club Rep';
 
+  // Helper to determine if a link is active
+  const checkActive = (path) => {
+    if (path === homePath) return location.pathname === homePath;
+    if (path === faqPath) return location.pathname === faqPath;
+    return location.pathname.startsWith(path);
+  };
+
   return (
     <header className="w-full bg-white border-b border-[#E3DEE0] h-16 flex items-center justify-between px-6 md:px-12 shrink-0 relative z-50 font-inter" ref={navRef}>
 
@@ -65,23 +73,49 @@ export default function TopNavbar({ role, onProfileOpen }) {
         </div>
 
         <nav className="hidden md:flex gap-16 text-sm font-semibold text-[#1F1A1C]">
-          <button onClick={() => navigate(homePath)} className={`py-4 ${isStudent ? "text-[#7A1F3D] cursor-pointer" : "hover:text-[#7A1F3D] cursor-pointer"}`}>{homeLabel}</button>
+          
+          {/* Home/Dashboard Link */}
+          <button 
+            onClick={() => navigate(homePath)} 
+            className={`py-4 cursor-pointer transition-colors ${checkActive(homePath) ? "text-[#7A1F3D]" : "hover:text-[#7A1F3D]"}`}
+          >
+            {homeLabel}
+          </button>
 
+          {/* Venue & Booking Dropdown */}
           <div className="relative">
-            <button onClick={() => toggleDropdown('venue')} className="flex items-center gap-1 hover:text-[#7A1F3D] py-4 cursor-pointer" >
+            <button 
+              onClick={() => toggleDropdown('venue')} 
+              className={`flex items-center gap-1 py-4 cursor-pointer transition-colors ${
+                location.pathname.startsWith('/venues') || activeDropdown === 'venue' ? "text-[#7A1F3D]" : "hover:text-[#7A1F3D]"
+              }`}
+            >
               Venue & Booking
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 15L7 10H17L12 15Z" fill="currentColor"/></svg>
             </button>
             {activeDropdown === 'venue' && (
               <div className="absolute top-14 left-0 w-48 bg-white border border-[#E3DEE0] rounded-lg shadow-lg py-1 flex flex-col">
-                <button onClick={() => { navigate('/venues'); setActiveDropdown(null); }} className="text-left px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold text-[#1F1A1C] cursor-pointer">Book Venue</button>
+                <button 
+                  onClick={() => { navigate('/venues'); setActiveDropdown(null); }} 
+                  className={`text-left px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold cursor-pointer ${
+                    location.pathname.startsWith('/venues') ? "text-[#7A1F3D]" : "text-[#1F1A1C]"
+                  }`}
+                >
+                  Book Venue
+                </button>
                 <a href="#" className="px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold text-[#1F1A1C]">Booking History</a>
               </div>
             )}
           </div>
 
+          {/* Events Dropdown */}
           <div className="relative">
-            <button onClick={() => toggleDropdown('events')} className="flex items-center gap-1 hover:text-[#7A1F3D] py-4 cursor-pointer">
+            <button 
+              onClick={() => toggleDropdown('events')} 
+              className={`flex items-center gap-1 py-4 cursor-pointer transition-colors ${
+                location.pathname.includes('/events') || activeDropdown === 'events' ? "text-[#7A1F3D]" : "hover:text-[#7A1F3D]"
+              }`}
+            >
               Events
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 15L7 10H17L12 15Z" fill="currentColor"/></svg>
             </button>
@@ -98,14 +132,27 @@ export default function TopNavbar({ role, onProfileOpen }) {
             )}
           </div>
 
-          <div className="relative cursor-pointer">
-            <button onClick={() => toggleDropdown('help')} className={`flex items-center gap-1 py-4 ${!isStudent ? "text-[#7A1F3D] cursor-pointer" : "hover:text-[#7A1F3D] cursor-pointer"}`}>
+          {/* Help & Support Dropdown */}
+          <div className="relative">
+            <button 
+              onClick={() => toggleDropdown('help')} 
+              className={`flex items-center gap-1 py-4 cursor-pointer transition-colors ${
+                checkActive(faqPath) || activeDropdown === 'help' ? "text-[#7A1F3D]" : "hover:text-[#7A1F3D]"
+              }`}
+            >
               Help & Support
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 15L7 10H17L12 15Z" fill="currentColor"/></svg>
             </button>
             {activeDropdown === 'help' && (
               <div className="absolute top-14 left-0 w-48 bg-white border border-[#E3DEE0] rounded-lg shadow-lg py-1 flex flex-col">
-                <button onClick={() => { navigate(faqPath); setActiveDropdown(null); }} className="text-left px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold text-[#1F1A1C] cursor-pointer">FAQ</button>
+                <button 
+                  onClick={() => { navigate(faqPath); setActiveDropdown(null); }} 
+                  className={`text-left px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold cursor-pointer ${
+                    checkActive(faqPath) ? "text-[#7A1F3D]" : "text-[#1F1A1C]"
+                  }`}
+                >
+                  FAQ
+                </button>
                 <a href="https://docs.google.com/forms/d/e/1FAIpQLScKPJLpauxqEzx6vavNyKgUUw9oVKgYx7L5wcDPizUSjgvgig/viewform?usp=publish-editor" target="_blank" rel="noreferrer" className="px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold text-[#1F1A1C]">Lost Item</a>
                 <a href="https://docs.google.com/forms/d/e/1FAIpQLSeE1J0a6KQTBnpRSbUyvReN9HSOOXqBgGY2fvxkH32g2ULMWA/viewform?usp=publish-editor" target="_blank" rel="noreferrer" className="px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold text-[#1F1A1C]">Feedback</a>
               </div>
@@ -141,10 +188,17 @@ export default function TopNavbar({ role, onProfileOpen }) {
 
       {isMobileMenuOpen && (
         <div className="md:hidden absolute top-16 left-0 w-full bg-white border-b border-[#E3DEE0] shadow-lg z-40 flex flex-col py-2 font-inter">
-          <button onClick={() => { setIsMobileMenuOpen(false); navigate(homePath); }} className="text-left w-full px-6 py-3 text-[#7A1F3D] text-sm font-semibold border-b border-gray-100 cursor-pointer">{homeLabel}</button>
+          <button 
+            onClick={() => { setIsMobileMenuOpen(false); navigate(homePath); }} 
+            className={`text-left w-full px-6 py-3 text-sm font-semibold border-b border-gray-100 cursor-pointer ${
+              checkActive(homePath) ? "text-[#7A1F3D]" : "text-[#1F1A1C]"
+            }`}
+          >
+            {homeLabel}
+          </button>
 
-          <div className="px-6 py-2 border-b border-gray-100 cursor-pointer">
-            <p className="text-xs text-gray-400 font-bold uppercase mb-1 cursor-pointer">Venue & Booking</p>
+          <div className="px-6 py-2 border-b border-gray-100">
+            <p className="text-xs text-gray-400 font-bold uppercase mb-1">Venue & Booking</p>
             <button onClick={() => { setIsMobileMenuOpen(false); navigate('/venues'); }} className="block w-full text-left py-1 text-[13px] font-semibold text-[#1F1A1C] cursor-pointer">Book Venue</button>
             <a href="#" className="block py-1 text-[13px] font-semibold text-[#1F1A1C]">Booking History</a>
           </div>
@@ -160,9 +214,16 @@ export default function TopNavbar({ role, onProfileOpen }) {
             )}
           </div>
 
-          <div className="px-6 py-2 border-b border-gray-100 cursor-pointer">
+          <div className="px-6 py-2 border-b border-gray-100">
             <p className="text-xs text-gray-400 font-bold uppercase mb-1">Help & Support</p>
-            <button onClick={() => { setIsMobileMenuOpen(false); navigate(faqPath); }} className="block py-1 text-[13px] font-semibold text-[#1F1A1C]">FAQ</button>
+            <button 
+              onClick={() => { setIsMobileMenuOpen(false); navigate(faqPath); }} 
+              className={`block py-1 text-[13px] font-semibold ${
+                checkActive(faqPath) ? "text-[#7A1F3D]" : "text-[#1F1A1C]"
+              }`}
+            >
+              FAQ
+            </button>
             <a href="https://docs.google.com/forms/d/e/1FAIpQLScKPJLpauxqEzx6vavNyKgUUw9oVKgYx7L5wcDPizUSjgvgig/viewform?usp=publish-editor" target="_blank" rel="noreferrer" className="block py-1 text-[13px] font-semibold text-[#1F1A1C]">Lost Item</a>
             <a href="https://docs.google.com/forms/d/e/1FAIpQLSeE1J0a6KQTBnpRSbUyvReN9HSOOXqBgGY2fvxkH32g2ULMWA/viewform?usp=publish-editor" target="_blank" rel="noreferrer" className="block py-1 text-[13px] font-semibold text-[#1F1A1C]">Feedback</a>
           </div>
