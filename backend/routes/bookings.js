@@ -30,6 +30,7 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 });
 
 const ACTIVE_BOOKING_STATUSES = [
+  'pending_approval',
   'confirmed',
   'approved_awaiting_payment',
 ];
@@ -491,10 +492,13 @@ router.post(
             );
 
           if (occupied + attendees > capacity) {
+            const remaining = Math.max(0, capacity - occupied);
             return res.status(409).json({
               success: false,
               error:
-                'Selected slot is at full capacity',
+                remaining === 0
+                ? `This slot is fully booked (${capacity} of ${capacity} places taken). Please choose another time.`
+                : `Only ${remaining} place${remaining === 1 ? '' : 's'} left in this slot. Please reduce your attendees or choose another time.`,
             });
           }
         }

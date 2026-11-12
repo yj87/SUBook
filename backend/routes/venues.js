@@ -47,6 +47,7 @@ console.log('Venue Supabase configuration:', {
 
 // Adjust these to match your actual booking statuses.
 const ACTIVE_BOOKING_STATUSES = [
+  'pending_approval',
   'confirmed',
   'approved_awaiting_payment',
 ];

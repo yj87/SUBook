@@ -274,17 +274,34 @@ const clearSelectionError = () => {
   };
 
   const dailyBlockReason = (date) => {
-    if (!date) return '';
-    if (date < minimumBookingDate()) return 'Bookings require at least 3 calendar days notice';
-    if (venue?.venue_status !== 'available') return 'Venue is unavailable';
-    const slots = slotsForDate(date);
-    if (slots.every((s) => s.unavailable)) return 'No time left on this date';
-    const blocked = slots.find((s) => s.status === 'fully booked');
-    if (blocked) {
-      return `Slot ${formatHour(blocked.startHour)} is already fully booked`;
-    }
-    return '';
-  };
+  if (!date) return '';
+  if (date < minimumBookingDate()) {
+    return 'Bookings require at least 3 calendar days notice';
+  }
+  if (venue?.venue_status !== 'available') {
+    return 'The venue is unavailable';
+  }
+
+  const slots = slotsForDate(date);
+
+  // All slots unavailable (past / venue closed / not yet open)
+  if (slots.every((s) => s.unavailable)) {
+    return 'All time slots are unavailable on this day';
+  }
+
+  // ALL slots reserved (fully booked for the day)
+  if (slots.every((s) => s.unavailable || s.reserved)) {
+    return 'This day is fully booked. Please choose another date';
+  }
+
+  // Some slots reserved but not all
+  const blocked = slots.find((s) => s.status === 'fully booked');
+  if (blocked) {
+    return `Not available for full-day booking —— blocked slot starts at ${formatHour(blocked.startHour)}`;
+  }
+
+  return '';
+};
 
   const chooseSlot = (slot) => {
     if (slot.unavailable || slot.reserved) return;
@@ -741,6 +758,15 @@ const clearSelectionError = () => {
                             return;
                           }
                           if (bookingMode === 'hourly' && status === 'unavailable') {
+                            return;
+                          }
+                          
+                          if (bookingMode === 'hourly' && status === 'reserved') {
+                            setSelectedDate(date);
+                            setSelectedRange([]);
+                            setSelectionError(
+                            'All slots on this date are already reserved. Please choose another date.'
+                            );
                             return;
                           }
                           chooseDate(date);
