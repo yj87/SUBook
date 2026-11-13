@@ -76,7 +76,6 @@ export default function MPPPendingRequests() {
     }
   };
 
-  // --- REAL VERIFICATION LOGIC ---
   const runOCRVerification = (request) => {
     if (!request || !request.approval_letter_url) return null;
 
@@ -198,9 +197,6 @@ export default function MPPPendingRequests() {
     }
   };
 
-  // =====================================================================
-  // FILTERING AND SORTING
-  // =====================================================================
   const filteredAndSortedRequests = requests
     .filter(req => {
       const role = req.profiles?.role;
@@ -255,6 +251,7 @@ export default function MPPPendingRequests() {
             No pending requests at the moment. You're all caught up!
           </div>
         ) : (
+          // Adjusted the grid to keep the right side balanced
           <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
             
             {/* LEFT: Requests List */}
@@ -333,9 +330,9 @@ export default function MPPPendingRequests() {
               </div>
             </div>
 
-            {/* RIGHT: Details Panel */}
+            {/* RIGHT: Details Panel (Constrain the width so it's not too wide) */}
             {selectedRequest && (
-              <div className="rounded-xl border border-[#E3DEE0] bg-white p-6 md:p-8 max-w-3xl">
+              <div className="rounded-xl border border-[#E3DEE0] bg-white p-6 md:p-8 w-full max-w-3xl">
                 <div className="mb-6">
                   <h2 className="text-xl font-bold text-[#1F1A1C]">
                     {selectedRequest.profiles?.full_name} – {selectedRequest.venues?.venue_name}
@@ -360,54 +357,64 @@ export default function MPPPendingRequests() {
                   </div>
                 </div>
 
-                {/* Booking Info */}
-                <div className="text-sm text-[#1F1A1C] space-y-1 mb-6">
-                  <p><strong>Matric No:</strong> {selectedRequest.profiles?.matric_no || '—'}</p>
-                  <p><strong>Date & Time:</strong> {formatDate(selectedRequest.start_time)}, {selectedRequest.booking_type === 'daily' ? 'Whole Day' : `${formatTime(selectedRequest.start_time)} – ${formatTime(selectedRequest.end_time)}`}</p>
-                  <p><strong>Purpose:</strong> {selectedRequest.purpose}</p>
-                  <p><strong>Attendees:</strong> {selectedRequest.expected_attendees}</p>
+                {/* Booking Info - 2 COLUMN LAYOUT (Aligned Rows) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5 mb-8">
                   
-                  {/* DYNAMIC RATE & TOTAL CALCULATION */}
-                  {(() => {
-                    const rate = Number(selectedRequest.quoted_rate || 0);
-                    const deposit = Number(selectedRequest.quoted_deposit || 0);
-                    
-                    // Calculate duration
-                    let multiplier = 1;
-                    let unitLabel = '';
+                  {/* Row 1 */}
+                  <div>
+                    <p className="text-xs font-semibold text-[#6B6468] uppercase mb-1">Applicant</p>
+                    <p className="font-semibold text-sm text-[#1F1A1C]">{selectedRequest.profiles?.full_name}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-[#6B6468] uppercase mb-1">Date & Time</p>
+                    <p className="font-semibold text-sm text-[#1F1A1C]">
+                      {formatDate(selectedRequest.start_time)}
+                      {selectedRequest.booking_type === 'daily' ? ' (Whole Day)' : `, ${formatTime(selectedRequest.start_time)} – ${formatTime(selectedRequest.end_time)}`}
+                    </p>
+                  </div>
 
-                    if (selectedRequest.booking_type === 'daily') {
-                      // For daily, count the number of days (rough calculation based on start/end dates)
-                      const start = new Date(selectedRequest.start_time);
-                      const end = new Date(selectedRequest.end_time);
-                      const diffTime = Math.abs(end - start);
-                      multiplier = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
-                      unitLabel = 'Daily Rate';
-                    } else {
-                      // For hourly, calculate the difference in hours
-                      const start = new Date(selectedRequest.start_time);
-                      const end = new Date(selectedRequest.end_time);
-                      const diffTime = Math.abs(end - start);
-                      multiplier = Math.round(diffTime / (1000 * 60 * 60)) || 1;
-                      unitLabel = 'Hourly Rate';
-                    }
+                  {/* Row 2 */}
+                  <div>
+                    <p className="text-xs font-semibold text-[#6B6468] uppercase mb-1">Matric No</p>
+                    <p className="font-semibold text-sm text-[#1F1A1C]">{selectedRequest.profiles?.matric_no || '—'}</p>
+                  </div>
+                  <div>
+                    {(() => {
+                      const rate = Number(selectedRequest.quoted_rate || 0);
+                      const isDaily = selectedRequest.booking_type === 'daily';
+                      return (
+                        <>
+                          <p className="text-xs font-semibold text-[#6B6468] uppercase mb-1">{isDaily ? 'Daily Rate' : 'Hourly Rate'}</p>
+                          <p className="font-semibold text-sm text-[#1F1A1C]">
+                            RM {rate.toFixed(2)}
+                          </p>
+                        </>
+                      );
+                    })()}
+                  </div>
 
-                    const totalRental = rate * multiplier;
-                    const total = totalRental + deposit;
+                  {/* Row 3 */}
+                  <div>
+                    <p className="text-xs font-semibold text-[#6B6468] uppercase mb-1">Purpose</p>
+                    <p className="font-semibold text-sm text-[#1F1A1C]">{selectedRequest.purpose}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-[#6B6468] uppercase mb-1">Deposit</p>
+                    <p className="font-semibold text-sm text-[#1F1A1C]">RM {Number(selectedRequest.quoted_deposit || 0).toFixed(2)}</p>
+                  </div>
 
-                    return (
-                      <>
-                        <p>
-                          <strong>{unitLabel}:</strong> RM {rate.toFixed(2)} 
-                          {multiplier > 1 && <span className="text-[#6B6468]"> × {multiplier} {selectedRequest.booking_type === 'daily' ? 'days' : 'hours'}</span>}
-                        </p>
-                        <p><strong>Deposit:</strong> RM {deposit.toFixed(2)}</p>
-                        <p className="font-bold text-[#7A1F3D] mt-2 text-base">
-                          Total: RM {total.toFixed(2)}
-                        </p>
-                      </>
-                    );
-                  })()}
+                  {/* Row 4 */}
+                  <div>
+                    <p className="text-xs font-semibold text-[#6B6468] uppercase mb-1">Attendees</p>
+                    <p className="font-semibold text-sm text-[#1F1A1C]">{selectedRequest.expected_attendees} people</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-[#7A1F3D] uppercase mb-1">Total Amount</p>
+                    <p className="font-bold text-base text-[#7A1F3D]">
+                      RM {(Number(selectedRequest.quoted_rate || 0) + Number(selectedRequest.quoted_deposit || 0)).toFixed(2)}
+                    </p>
+                  </div>
+
                 </div>
 
                 {/* Document & OCR Check */}
