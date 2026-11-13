@@ -1,42 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { useNavigate } from 'react-router-dom';
 import ProfileModal from '../components/ProfileModal';
-
-const getWeekDays = () => {
-  const current = new Date();
-  const day = current.getDay();
-  const diff = current.getDate() - day + (day === 0 ? -6 : 1);
-  const monday = new Date(current.setDate(diff));
-  monday.setHours(0, 0, 0, 0);
-  const days = [];
-  for (let i = 0; i < 7; i++) {
-    const nextDay = new Date(monday);
-    nextDay.setDate(monday.getDate() + i);
-    days.push(nextDay);
-  }
-  return days;
-};
-
-const timeSlots = [
-  '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00',
-  '17:00', '18:00', '19:00', '20:00', '21:00', '22:00', '23:00', '00:00'
-];
-
-const PREVIEW_COUNT = 2;
+import BookingCalendar from '../components/BookingCalendar';
+import { API_BASE_URL } from '../config/api';
+import { addDays, dateKey, getMalaysiaWeek } from '../utils/bookingCalendar';
 
 export default function MPPDashboard() {
   const [stats, setStats] = useState({ total: 0, pending: 0, confirmed: 0 });
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [calendarError, setCalendarError] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [popover, setPopover] = useState(null);
-
-  const navigate = useNavigate();
-  const weekDays = getWeekDays();
-  const popoverRef = useRef(null);
+  const weekDays = useMemo(() => getMalaysiaWeek(), []);
 
   const startDay = weekDays[0].getDate();
   const endDay = weekDays[6].getDate();
@@ -49,6 +27,7 @@ export default function MPPDashboard() {
 
     const fetchDashboardData = async () => {
       setLoading(true);
+      try {
 
       const now = new Date();
       const startOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
@@ -80,60 +59,35 @@ export default function MPPDashboard() {
         confirmed: confirmedRes.count ?? 0,
       });
 
-      const startOfWeek = new Date(weekDays[0]);
-      startOfWeek.setHours(0, 0, 0, 0);
-      const endOfWeek = new Date(weekDays[6]);
-      endOfWeek.setHours(23, 59, 59, 999);
+      const startOfWeek = new Date(`${dateKey(weekDays[0])}T00:00:00+08:00`);
+      const endOfWeek = addDays(startOfWeek, 7);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Your admin session has expired. Please sign in again.');
 
-      const { data: bookingsData, error: bookingsError } = await supabase
-        .from('bookings')
-        .select(`
-          booking_id,
-          event_name,
-          start_time,
-          end_time,
-          date,
-          status,
-          venue_id,
-          venues (venue_name)
-        `)
-        .eq('status', 'confirmed')
-        .lt('start_time', endOfWeek.toISOString())
-        .gt('end_time', startOfWeek.toISOString());
+      const calendarResponse = await fetch(
+        `${API_BASE_URL}/api/bookings/calendar?start=${encodeURIComponent(startOfWeek.toISOString())}&end=${encodeURIComponent(endOfWeek.toISOString())}`,
+        { headers: { Authorization: `Bearer ${session.access_token}` } },
+      );
+      const calendarBody = await calendarResponse.json();
+      if (!calendarResponse.ok) throw new Error(calendarBody.error || 'Unable to load calendar bookings');
 
       if (cancelled) return;
 
-      if (bookingsError) console.error('Calendar bookings:', bookingsError);
-      setBookings(bookingsData || []);
+      setCalendarError('');
+      setBookings(calendarBody.bookings || []);
       setLoading(false);
+    } catch (error) {
+      if (cancelled) return;
+      console.error('Calendar data:', error);
+      setCalendarError(error.message || 'Unable to load calendar bookings');
+      setBookings([]);
+      setLoading(false);
+      }
     };
 
     fetchDashboardData();
     return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    if (!popover) return;
-
-    const handleClickOutside = (e) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target)) {
-        setPopover(null);
-      }
-    };
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') setPopover(null);
-    };
-
-    setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside);
-      document.addEventListener('keydown', handleEscape);
-    }, 0);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [popover]);
+  }, [refreshKey, weekDays]);
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -145,98 +99,6 @@ export default function MPPDashboard() {
       return;
     }
     setTimeout(() => window.location.replace('/login'), 600);
-  };
-
-  const formatTimeLabel = (timeStr) => {
-    const [hour] = timeStr.split(':');
-    let h = parseInt(hour);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const displayH = h % 12 || 12;
-    return `${displayH}:00 ${ampm}`;
-  };
-
-  const getBookingsForSlot = (dateObj, timeSlot) => {
-    const dateString = new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000)
-      .toISOString()
-      .split('T')[0];
-
-    const [slotHour] = timeSlot.split(':').map(Number);
-    const slotStart = new Date(dateObj);
-    slotStart.setHours(slotHour, 0, 0, 0);
-    const slotEnd = new Date(slotStart);
-    slotEnd.setHours(slotHour + 1, 0, 0, 0);
-
-    return bookings.filter((booking) => {
-      const bookingStart = new Date(booking.start_time);
-      const bookingEnd = new Date(booking.end_time);
-
-      const bookingDay = new Date(
-        bookingStart.getTime() - bookingStart.getTimezoneOffset() * 60000
-      )
-        .toISOString()
-        .split('T')[0];
-
-      if (bookingDay !== dateString) return false;
-      return bookingStart < slotEnd && bookingEnd > slotStart;
-    });
-  };
-
-  const openPopover = (e, cellBookings, day, time) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setPopover({
-      anchorRect: rect,
-      bookings: cellBookings,
-      title: `${day.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })} · ${formatTimeLabel(time)}`,
-    });
-  };
-
-  const renderPopover = () => {
-    if (!popover) return null;
-    const { anchorRect, bookings: cellBookings, title } = popover;
-    const popoverWidth = 288;
-    const margin = 8;
-
-    let left = anchorRect.left + anchorRect.width / 2 - popoverWidth / 2;
-    let top = anchorRect.bottom + margin;
-
-    if (left < margin) left = margin;
-    if (left + popoverWidth > window.innerWidth - margin) {
-      left = window.innerWidth - popoverWidth - margin;
-    }
-
-    const estimatedHeight = Math.min(cellBookings.length * 60 + 60, 360);
-    if (top + estimatedHeight > window.innerHeight - margin) {
-      top = anchorRect.top - estimatedHeight - margin;
-    }
-
-    return (
-      <div
-        ref={popoverRef}
-        style={{ position: 'fixed', left, top, width: popoverWidth }}
-        className="z-[100] rounded-xl border border-[#E3DEE0] bg-white shadow-xl overflow-hidden"
-      >
-        <div className="flex items-center justify-between border-b border-[#E3DEE0] px-4 py-2.5">
-          <p className="text-xs font-bold text-[#7A1F3D]">{title}</p>
-          <button
-            onClick={() => setPopover(null)}
-            className="text-[#6B6468] hover:text-[#7A1F3D] text-lg leading-none"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <div className="max-h-80 overflow-y-auto divide-y divide-[#F0EBED]">
-          {cellBookings.map((booking) => (
-            <div key={booking.booking_id} className="px-4 py-2.5">
-              <p className="text-sm font-semibold text-[#1F1A1C]">{booking.event_name}</p>
-              <p className="mt-0.5 text-xs text-[#6B6468]">
-                {booking.venues?.venue_name || 'Venue'} · {new Date(booking.start_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}–{new Date(booking.end_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
   };
 
   return (
@@ -338,72 +200,18 @@ export default function MPPDashboard() {
             </button>
           </div>
 
-          <div className="flex-grow overflow-auto relative [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            <div className="min-w-[800px] flex flex-col gap-2 pb-4">
-
-              <div className="grid grid-cols-[60px_repeat(7,1fr)] md:grid-cols-[80px_repeat(7,1fr)] gap-1 md:gap-2 sticky top-0 bg-white z-10">
-                <div></div>
-                {weekDays.map((day, index) => (
-                  <div key={index} className="text-center text-[#6B6468] text-[10px] md:text-xs font-semibold pb-2">
-                    {day.toLocaleDateString('en-US', { weekday: 'short' })}
-                  </div>
-                ))}
-              </div>
-
-              {timeSlots.map((time) => (
-                <div key={time} className="grid grid-cols-[60px_repeat(7,1fr)] md:grid-cols-[80px_repeat(7,1fr)] gap-1 md:gap-2 min-h-[70px]">
-
-                  <div className="flex items-start justify-end text-[#6B6468] text-[9px] md:text-[11px] font-semibold pr-1 md:pr-2 pt-1">
-                    {formatTimeLabel(time)}
-                  </div>
-
-                  {weekDays.map((day, dayIndex) => {
-                    const slotBookings = getBookingsForSlot(day, time);
-                    const visible = slotBookings.slice(0, PREVIEW_COUNT);
-                    const hiddenCount = slotBookings.length - visible.length;
-
-                    return (
-                      <div
-                        key={dayIndex}
-                        className="bg-[#FAF8F9] border border-[#E3DEE0] rounded-md p-1"
-                      >
-                        <div className="flex flex-col gap-1">
-                          {visible.map((booking) => (
-                            <div
-                              key={booking.booking_id}
-                              className="bg-[#CDEFD6] rounded px-1.5 py-1 shadow-sm"
-                            >
-                              <p className="text-[#17703A] text-[8px] md:text-[9px] font-semibold leading-tight truncate">
-                                {booking.event_name}
-                              </p>
-                              <p className="text-[#17703A] text-[7px] md:text-[8px] leading-tight truncate">
-                                {booking.venues?.venue_name || 'Venue'}
-                              </p>
-                            </div>
-                          ))}
-
-                          {hiddenCount > 0 && (
-                            <button
-                              onClick={(e) => openPopover(e, slotBookings, day, time)}
-                              className="text-left text-[8px] md:text-[9px] font-semibold text-[#7A1F3D] hover:underline leading-none"
-                            >
-                              +{hiddenCount} more
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-
-            </div>
+          <div className="min-h-0 flex-grow overflow-auto pb-1">
+            <BookingCalendar
+              days={weekDays}
+              bookings={bookings}
+              loading={loading}
+              error={calendarError}
+              onRetry={() => setRefreshKey((value) => value + 1)}
+            />
           </div>
         </div>
 
       </main>
-
-      {renderPopover()}
 
       <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
     </div>
