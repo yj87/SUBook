@@ -59,7 +59,7 @@ export default function ClubDashboard() {
       case 'pending_approval':
         return <span className="inline-block bg-[#FFF3CD] text-[#8A6D00] text-xs font-semibold px-3 py-1.5 rounded-lg">Pending Approval</span>;
       case 'approved_awaiting_payment':
-        return <span className="inline-block bg-[#DCE8FF] text-[#1F4FA3] text-xs font-semibold px-3 py-1.5 rounded-lg">Approved – Awaiting Payment</span>;
+        return <span className="inline-block bg-[#FEE2E2] text-[#991B1B] text-xs font-semibold px-3 py-1.5 rounded-lg">Approved – Awaiting Payment</span>;
       case 'confirmed':
         return <span className="inline-block bg-[#D4F1DC] text-[#17703A] text-xs font-semibold px-3 py-1.5 rounded-lg">Confirmed</span>;
       case 'rejected':

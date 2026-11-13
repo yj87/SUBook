@@ -60,7 +60,6 @@ function App() {
         <Route element={<ProtectedRoute allowedRoles={['club_representative']} />}>
           <Route path="/club-dashboard" element={<ClubDashboard />} />
           <Route path="/club-faq" element={<ClubFAQPage />} />
-          <Route path="/booking-request/approval" element={<ClubBookingApproval />} />
         </Route>
 
         {/* MPP ADMIN ROUTES ONLY */}

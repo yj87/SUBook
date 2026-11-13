@@ -9,24 +9,19 @@ export default function VenueCatalogue() {
   const [venues, setVenues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  
-  // 1. Initialize role as NULL to prevent flickering
-  const [role, setRole] = useState(null); 
+  const [role, setRole] = useState('student');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-  // Fetch Role
   useEffect(() => {
     let cancelled = false;
     const loadRole = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user || cancelled) return;
-      
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('role')
         .eq('profile_id', user.id)
         .maybeSingle();
-        
       if (!cancelled && !error && profile?.role) {
         setRole(profile.role);
       }
@@ -35,33 +30,26 @@ export default function VenueCatalogue() {
     return () => { cancelled = true; };
   }, []);
 
-  // Fetch Venues
-  useEffect(() => {
-    let cancelled = false;
-    async function loadVenues() {
-      try {
-        const result = await fetchVenues();
-        if (cancelled) return;
-        const list = Array.isArray(result) ? result : result?.data || [];
-        setVenues(list);
-      } catch (err) {
-        if (!cancelled) setError(err.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    loadVenues();
-    return () => { cancelled = true; };
-  }, []);
+  
+useEffect(() => {
+  let cancelled = false;
 
-  // 2. Wait for role to load before rendering
-  if (role === null) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F6F4F5]">
-        <div className="w-12 h-12 border-4 border-[#7A1F3D] border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
+  async function loadVenues() {
+    try {
+      const result = await fetchVenues();
+      if (cancelled) return;
+      const list = Array.isArray(result) ? result : result?.data || [];
+      setVenues(list);
+    } catch (err) {
+      if (!cancelled) setError(err.message);
+    } finally {
+      if (!cancelled) setLoading(false);
+    }
   }
+
+  loadVenues();
+  return () => { cancelled = true; };
+}, []);
 
   return (
     <div className="min-h-screen bg-[#F6F4F5] font-inter text-[#1F1A1C]">
@@ -69,15 +57,12 @@ export default function VenueCatalogue() {
       <main className="mx-auto max-w-[1280px] px-5 pb-24 pt-7 sm:px-[60px]">
         <h1 className="text-[28px] font-bold">Select a Venue</h1>
         <p className="mt-1 text-sm text-[#6B6468]">Seven SUB venue types – choose one to check availability</p>
-        
         {loading && <p role="status" className="mt-10 text-[#6B6468]">Loading venues…</p>}
-        
         {error && !loading && (
           <div role="alert" className="mt-8 rounded-xl border border-[#E3DEE0] bg-white p-5">
             {error}. Please check the backend and Supabase configuration.
           </div>
         )}
-        
         {!loading && !error && venues.length > 0 && (
           <div className="mt-9 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {venues.map((venue) => (
@@ -85,7 +70,6 @@ export default function VenueCatalogue() {
             ))}
           </div>
         )}
-        
         {!loading && !error && venues.length === 0 && (
           <div className="mt-9 rounded-xl border border-[#E3DEE0] bg-white p-8 text-[#6B6468]">
             No venues are available in the catalogue yet.
