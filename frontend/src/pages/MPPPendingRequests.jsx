@@ -76,6 +76,7 @@ export default function MPPPendingRequests() {
     }
   };
 
+  // --- REAL VERIFICATION LOGIC ---
   const runOCRVerification = (request) => {
     if (!request || !request.approval_letter_url) return null;
 
@@ -197,6 +198,9 @@ export default function MPPPendingRequests() {
     }
   };
 
+  // =====================================================================
+  // FILTERING AND SORTING
+  // =====================================================================
   const filteredAndSortedRequests = requests
     .filter(req => {
       const role = req.profiles?.role;
@@ -253,7 +257,7 @@ export default function MPPPendingRequests() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
             
-            {/* LEFT: Requests List (Slightly narrower) */}
+            {/* LEFT: Requests List */}
             <div className="rounded-xl border border-[#E3DEE0] bg-white p-4">
               <h2 className="text-sm font-bold mb-4">Pending requests ({requests.filter(r => r.status === 'pending_approval').length})</h2>
               
@@ -329,7 +333,7 @@ export default function MPPPendingRequests() {
               </div>
             </div>
 
-            {/* RIGHT: Details Panel (Constrained Max Width) */}
+            {/* RIGHT: Details Panel */}
             {selectedRequest && (
               <div className="rounded-xl border border-[#E3DEE0] bg-white p-6 md:p-8 max-w-3xl">
                 <div className="mb-6">
@@ -356,14 +360,57 @@ export default function MPPPendingRequests() {
                   </div>
                 </div>
 
+                {/* Booking Info */}
                 <div className="text-sm text-[#1F1A1C] space-y-1 mb-6">
                   <p><strong>Matric No:</strong> {selectedRequest.profiles?.matric_no || '—'}</p>
                   <p><strong>Date & Time:</strong> {formatDate(selectedRequest.start_time)}, {selectedRequest.booking_type === 'daily' ? 'Whole Day' : `${formatTime(selectedRequest.start_time)} – ${formatTime(selectedRequest.end_time)}`}</p>
                   <p><strong>Purpose:</strong> {selectedRequest.purpose}</p>
                   <p><strong>Attendees:</strong> {selectedRequest.expected_attendees}</p>
-                  <p><strong>Rate:</strong> RM {Number(selectedRequest.quoted_rate || 0).toFixed(2)} fee + RM {Number(selectedRequest.quoted_deposit || 0).toFixed(2)} deposit</p>
+                  
+                  {/* DYNAMIC RATE & TOTAL CALCULATION */}
+                  {(() => {
+                    const rate = Number(selectedRequest.quoted_rate || 0);
+                    const deposit = Number(selectedRequest.quoted_deposit || 0);
+                    
+                    // Calculate duration
+                    let multiplier = 1;
+                    let unitLabel = '';
+
+                    if (selectedRequest.booking_type === 'daily') {
+                      // For daily, count the number of days (rough calculation based on start/end dates)
+                      const start = new Date(selectedRequest.start_time);
+                      const end = new Date(selectedRequest.end_time);
+                      const diffTime = Math.abs(end - start);
+                      multiplier = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+                      unitLabel = 'Daily Rate';
+                    } else {
+                      // For hourly, calculate the difference in hours
+                      const start = new Date(selectedRequest.start_time);
+                      const end = new Date(selectedRequest.end_time);
+                      const diffTime = Math.abs(end - start);
+                      multiplier = Math.round(diffTime / (1000 * 60 * 60)) || 1;
+                      unitLabel = 'Hourly Rate';
+                    }
+
+                    const totalRental = rate * multiplier;
+                    const total = totalRental + deposit;
+
+                    return (
+                      <>
+                        <p>
+                          <strong>{unitLabel}:</strong> RM {rate.toFixed(2)} 
+                          {multiplier > 1 && <span className="text-[#6B6468]"> × {multiplier} {selectedRequest.booking_type === 'daily' ? 'days' : 'hours'}</span>}
+                        </p>
+                        <p><strong>Deposit:</strong> RM {deposit.toFixed(2)}</p>
+                        <p className="font-bold text-[#7A1F3D] mt-2 text-base">
+                          Total: RM {total.toFixed(2)}
+                        </p>
+                      </>
+                    );
+                  })()}
                 </div>
 
+                {/* Document & OCR Check */}
                 <div className="rounded-xl bg-[#F3EEF0] p-5 mb-8">
                   <h3 className="text-sm font-bold text-[#1F1A1C] mb-3">
                     {selectedRequest.status === 'pending_approval' ? 'Uploaded approval letter + AI OCR check' : 'Payment window (24 hours)'}
@@ -374,7 +421,7 @@ export default function MPPPendingRequests() {
                       
                       {selectedRequest.approval_letter_url ? (
                         ocrResult && (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 mb-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
                             {renderCheck('Club name matches', ocrResult.clubMatch)}
                             {renderCheck('Event date matches request', ocrResult.dateMatch)}
                             {renderCheck('Venue matches selection', ocrResult.venueMatch)}
@@ -415,6 +462,7 @@ export default function MPPPendingRequests() {
                   )}
                 </div>
 
+                {/* Action Buttons */}
                 <div className="flex flex-wrap gap-4">
                   {selectedRequest.status === 'pending_approval' && !showRejectInput && (
                     <>
@@ -459,6 +507,7 @@ export default function MPPPendingRequests() {
                   Approve → Approved – Awaiting Payment (24h window, else Auto-Cancelled – Unpaid).
                   Reject → enter reason, slot reopens.
                 </p>
+
               </div>
             )}
           </div>
