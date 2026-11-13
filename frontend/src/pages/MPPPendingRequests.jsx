@@ -440,7 +440,7 @@ export default function MPPPendingRequests() {
                   </div>
                   <div>
                     <p className="text-xs font-semibold text-[#6B6468] uppercase mb-1">
-                      {selectedRequest.booking_type === 'daily' ? 'Daily Rate' : 'Hourly Rate'}
+                      {selectedRequest.booking_type === 'daily' ? 'Daily Subtotal' : 'Hourly Subtotal'}
                     </p>
                     <p className="font-semibold text-sm text-[#1F1A1C]">
                       RM {Number(selectedRequest.quoted_rate || 0).toFixed(2)}
