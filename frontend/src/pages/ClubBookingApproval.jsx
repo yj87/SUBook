@@ -35,6 +35,9 @@ export default function ClubBookingApproval() {
   const [fileError, setFileError] = useState('');
   const [previewUrl, setPreviewUrl] = useState(null);
 
+  // NEW: State for Modal Popup
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
   // AI OCR States
   const [isScanning, setIsScanning] = useState(false);
   const [scanComplete, setScanComplete] = useState(false);
@@ -140,7 +143,6 @@ export default function ClubBookingApproval() {
       const uniqueFileName = `${session.user.id}-${Date.now()}.${fileExt}`;
       const filePath = `${venueId}/${uniqueFileName}`;
 
-      // FIX: Changed bucket name to 'approval-letters' (with a hyphen)
       const { error: uploadError } = await supabase.storage
         .from('approval-letters')
         .upload(filePath, file, { upsert: true });
@@ -149,12 +151,11 @@ export default function ClubBookingApproval() {
         throw new Error(`Storage upload failed: ${uploadError.message}. Make sure 'approval-letters' bucket exists and RLS policies allow uploads.`);
       }
 
-      // FIX: Changed bucket name here too
       const { data: { publicUrl } } = supabase.storage
         .from('approval-letters')
         .getPublicUrl(filePath);
 
-      // 2. Send to Backend API (This enforces the Double-Booking lock!)
+      // 2. Send to Backend API
       const payload = {
         venueId,
         bookingType,
@@ -191,7 +192,6 @@ export default function ClubBookingApproval() {
         throw new Error('Server did not return a booking ID.');
       }
 
-      // 3. Navigate to Success page
       navigate(`/booking-request/success?bookingId=${body.booking.booking_id}`, { replace: true });
       
     } catch (error) {
@@ -277,12 +277,23 @@ export default function ClubBookingApproval() {
                   <span className="text-sm font-semibold text-[#1F1A1C] truncate">{fileName}</span>
                 </div>
 
-                <div className="mb-4 border border-[#E3DEE0] rounded-lg overflow-hidden bg-gray-50 h-40 flex items-center justify-center relative">
+                {/* Click to open Modal */}
+                <div 
+                  onClick={() => setIsPreviewOpen(true)}
+                  className="mb-4 border border-[#E3DEE0] rounded-lg overflow-hidden bg-gray-50 h-40 flex items-center justify-center relative cursor-pointer hover:opacity-90 transition-opacity"
+                  title="Click to preview full screen"
+                >
                   {file.type.startsWith('image/') ? (
-                    <img src={previewUrl} alt="Preview" className="max-h-full max-w-full object-contain" />
+                    <img src={previewUrl} alt="Preview" className="max-h-full max-w-full object-contain p-2" />
                   ) : (
-                    <iframe src={previewUrl} title="PDF Preview" className="w-full h-full border-none" />
+                    <iframe src={previewUrl} title="PDF Preview" className="w-full h-full border-none pointer-events-none" />
                   )}
+                  
+                  <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
+                    <span className="bg-white/90 text-[#7A1F3D] px-3 py-1.5 rounded-full text-xs font-bold shadow-sm opacity-0 hover:opacity-100 transition-opacity">
+                      Click to preview
+                    </span>
+                  </div>
                 </div>
 
                 <div className="flex flex-col gap-2">
@@ -351,19 +362,10 @@ export default function ClubBookingApproval() {
                   <input type="text" value={timeLabel} readOnly className="w-full h-10 px-3 bg-[#F9F7F8] border border-[#E3DEE0] rounded-lg text-[13px] text-gray-500 outline-none cursor-not-allowed" />
                 </div>
                 
-                {/* Capacity Check for Shared Venues */}
                 {venue?.is_shared ? (
                   <div>
                     <label className="block text-xs font-semibold text-[#6B6468] mb-1">Attendees (Max: {venue.capacity})</label>
-                    <input 
-                      type="number" 
-                      min="1" 
-                      max={Number(venue.capacity)} 
-                      value={attendees} 
-                      onChange={(e) => setAttendees(e.target.value)} 
-                      className="w-full h-10 px-3 bg-white border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none" 
-                      required 
-                    />
+                    <input type="number" min="1" max={Number(venue.capacity)} value={attendees} onChange={(e) => setAttendees(e.target.value)} className="w-full h-10 px-3 bg-white border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none" required />
                   </div>
                 ) : (
                   <div>
@@ -373,7 +375,6 @@ export default function ClubBookingApproval() {
                 )}
               </div>
 
-              {/* Event Purpose Field if Shared Venue (moves to next row) */}
               {venue?.is_shared && (
                 <div>
                   <label className="block text-xs font-semibold text-[#6B6468] mb-1">Event purpose</label>
@@ -402,6 +403,38 @@ export default function ClubBookingApproval() {
       </div>
       
       <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
+
+      {/* --- PREVIEW MODAL POPUP --- */}
+      {isPreviewOpen && previewUrl && (
+        <div 
+          className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4 sm:p-10 backdrop-blur-sm cursor-zoom-out"
+          onClick={() => setIsPreviewOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-xl overflow-hidden shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center p-4 border-b border-[#E3DEE0] bg-[#FAF9FA]">
+              <h3 className="text-sm font-bold text-[#1F1A1C] truncate">{fileName}</h3>
+              <button 
+                onClick={() => setIsPreviewOpen(false)}
+                className="text-[#6B6468] hover:text-red-500 bg-white p-1 rounded-full shadow-sm transition-colors cursor-pointer"
+                title="Close Preview"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto bg-gray-100 flex items-center justify-center p-2">
+              {file?.type.startsWith('image/') ? (
+                <img src={previewUrl} alt="Full Preview" className="max-w-full max-h-full object-contain shadow-sm" />
+              ) : (
+                <iframe src={previewUrl} title="Full PDF Preview" className="w-full h-[75vh] border-none shadow-sm" />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
