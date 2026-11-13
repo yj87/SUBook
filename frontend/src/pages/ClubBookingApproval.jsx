@@ -18,6 +18,7 @@ export default function ClubBookingApproval() {
   const startTime = searchParams.get('startTime');
   const endTime = searchParams.get('endTime');
   const bookingType = searchParams.get('bookingType');
+  const durationParam = searchParams.get('duration');
 
   const rawDate = datesParam ? datesParam.split(',')[0] : dateParam;
   const dbDate = rawDate ? `${rawDate}T00:00:00+08:00` : new Date().toISOString();
@@ -30,6 +31,8 @@ export default function ClubBookingApproval() {
   const [fileError, setFileError] = useState('');
   const [previewUrl, setPreviewUrl] = useState(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
 
   const [isScanning, setIsScanning] = useState(false);
   const [scanComplete, setScanComplete] = useState(false);
@@ -114,15 +117,18 @@ export default function ClubBookingApproval() {
     setEventDetails({ ...eventDetails, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e) => {
+  const handleReviewRequest = (e) => {
     e.preventDefault();
-    
     if (requiresLetter && !file) {
       setFileError('Approval letter is required for this venue.');
       return;
     }
+    setShowSummaryModal(true);
+  };
 
+  const handleConfirmSubmit = async () => {
     setIsSubmitting(true);
+    setShowSummaryModal(false);
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -148,22 +154,21 @@ export default function ClubBookingApproval() {
         publicUrl = url;
       }
 
-      // --- DYNAMIC RATE CALCULATION ---
-      // Fetch rates from the 'venue' object instead of hardcoding 0
       let finalRate = 0;
       let finalDeposit = 0;
       
       if (venue) {
         if (bookingType === 'daily') {
-          finalRate = Number(venue.daily_rate || 0);
+          const numDays = datesParam ? datesParam.split(',').length : 1;
+          finalRate = Number(venue.daily_rate || 0) * numDays;
           finalDeposit = Number(venue.daily_deposit || 0);
         } else {
-          finalRate = Number(venue.hourly_rate || 0);
+          const durationHours = Number(durationParam) || 1;
+          finalRate = Number(venue.hourly_rate || 0) * durationHours;
           finalDeposit = Number(venue.hourly_deposit || 0);
         }
       }
 
-      // --- DIRECT SUPABASE INSERT ---
       const { data: bookingData, error: insertError } = await supabase
         .from('bookings')
         .insert({
@@ -216,6 +221,20 @@ export default function ClubBookingApproval() {
     if (bookingType === 'daily') rateLabel = `Daily Rate: RM${Number(venue.daily_rate || 0).toFixed(2)}`;
     else rateLabel = `Hourly Rate: RM${Number(venue.hourly_rate || 0).toFixed(2)}`;
   }
+
+  const displayRate = bookingType === 'daily' ? Number(venue?.daily_rate || 0) : Number(venue?.hourly_rate || 0);
+  const displayDeposit = bookingType === 'daily' ? Number(venue?.daily_deposit || 0) : Number(venue?.hourly_deposit || 0);
+  
+  let calculatedRental = displayRate;
+  if (bookingType === 'daily') {
+    const numDays = datesParam ? datesParam.split(',').length : 1;
+    calculatedRental = displayRate * numDays;
+  } else {
+    const durationHours = Number(durationParam) || 1;
+    calculatedRental = displayRate * durationHours;
+  }
+  
+  const totalAmount = calculatedRental + displayDeposit;
 
   return (
     <div className="min-h-screen bg-[#F6F4F5] font-inter text-[#1F1A1C]">
@@ -297,7 +316,7 @@ export default function ClubBookingApproval() {
           <div className="bg-white p-6 rounded-xl border border-[#E3DEE0]">
             <h2 className="text-base font-bold text-[#1F1A1C] mb-4">Verify details</h2>
             
-            <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+            <form onSubmit={handleReviewRequest} className="flex flex-col gap-5">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
                   <label className="block text-xs font-semibold text-[#6B6468] mb-1">Club/Society name</label>
@@ -309,7 +328,7 @@ export default function ClubBookingApproval() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
                   <label className="block text-xs font-semibold text-[#6B6468] mb-1">Booking date</label>
                   <input type="text" value={formattedDate} readOnly className="w-full h-10 px-3 bg-[#F9F7F8] border border-[#E3DEE0] rounded-lg text-[13px] text-gray-500 outline-none cursor-not-allowed" />
@@ -318,35 +337,39 @@ export default function ClubBookingApproval() {
                   <label className="block text-xs font-semibold text-[#6B6468] mb-1">Booking time</label>
                   <input type="text" value={timeLabel} readOnly className="w-full h-10 px-3 bg-[#F9F7F8] border border-[#E3DEE0] rounded-lg text-[13px] text-gray-500 outline-none cursor-not-allowed" />
                 </div>
-                
-                {venue?.is_shared ? (
-                  <div>
-                    <label className="block text-xs font-semibold text-[#6B6468] mb-1">Attendees (Max: {venue.capacity})</label>
-                    <input type="number" min="1" max={Number(venue.capacity)} value={attendees} onChange={(e) => setAttendees(e.target.value)} className="w-full h-10 px-3 bg-white border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none" required />
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-xs font-semibold text-[#6B6468] mb-1">Event purpose</label>
-                    <input type="text" name="eventPurpose" value={eventDetails.eventPurpose} onChange={handleDetailChange} placeholder="Enter event purpose" className="w-full h-10 px-3 bg-white border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none" required />
-                  </div>
-                )}
               </div>
 
-              {venue?.is_shared && (
+              {/* ALWAYS SHOW ATTENDEES */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-xs font-semibold text-[#6B6468] mb-1">
+                    Expected Attendees {venue?.capacity ? `(Max: ${venue.capacity})` : ''}
+                  </label>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    max={venue?.capacity ? Number(venue.capacity) : undefined} 
+                    value={attendees} 
+                    onChange={(e) => setAttendees(e.target.value)} 
+                    className="w-full h-10 px-3 bg-white border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none" 
+                    required 
+                  />
+                </div>
+                
                 <div>
                   <label className="block text-xs font-semibold text-[#6B6468] mb-1">Event purpose</label>
                   <input type="text" name="eventPurpose" value={eventDetails.eventPurpose} onChange={handleDetailChange} placeholder="Enter event purpose" className="w-full h-10 px-3 bg-white border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none" required />
                 </div>
-              )}
+              </div>
 
               <p className="text-xs text-red-500">*Edit any incorrect field before confirming.</p>
 
               <div className="flex items-center gap-4 mt-2">
                 <button type="submit" disabled={isSubmitting || (requiresLetter && !file)} className="h-11 px-6 bg-[#7A1F3D] text-white rounded-lg text-[13px] font-semibold hover:bg-[#5a162d] transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
-                  {isSubmitting ? 'Submitting...' : 'Submit Booking Request'}
+                  {isSubmitting ? 'Processing...' : 'Review Request'}
                 </button>
                 <span className="text-xs text-[#6B6468] max-w-[200px]">
-                  Submit your request and wait for MPP to review.
+                  Review your details before submitting.
                 </span>
               </div>
             </form>
@@ -356,12 +379,13 @@ export default function ClubBookingApproval() {
       
       <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
 
+      {/* --- PREVIEW FILE MODAL --- */}
       {isPreviewOpen && previewUrl && (
         <div className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4 sm:p-10 backdrop-blur-sm cursor-zoom-out" onClick={() => setIsPreviewOpen(false)}>
           <div className="bg-white rounded-xl overflow-hidden shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col cursor-default" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center p-4 border-b border-[#E3DEE0] bg-[#FAF9FA]">
               <h3 className="text-sm font-bold text-[#1F1A1C] truncate">{fileName}</h3>
-              <button onClick={() => setIsPreviewOpen(false)} className="text-[#6B6468] hover:text-red-500 bg-white p-1 rounded-full shadow-sm">
+              <button onClick={() => setIsPreviewOpen(false)} className="text-[#6B6468] hover:text-red-500 bg-white p-1 rounded-full shadow-sm cursor-pointer">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
               </button>
             </div>
@@ -375,6 +399,94 @@ export default function ClubBookingApproval() {
           </div>
         </div>
       )}
+
+      {/* --- BOOKING SUMMARY POP-UP --- */}
+      {showSummaryModal && (
+        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowSummaryModal(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col cursor-default" onClick={(e) => e.stopPropagation()}>
+            
+            <div className="bg-[#FAF9FA] border-b border-[#E3DEE0] p-5">
+              <h2 className="text-xl font-bold text-[#1F1A1C]">Confirm Booking</h2>
+              <p className="text-sm text-[#6B6468]">Please review your request details.</p>
+            </div>
+
+            <div className="p-6 flex flex-col gap-4">
+              <div className="flex justify-between items-start gap-4">
+                <div>
+                  <p className="text-xs font-semibold text-[#6B6468] uppercase">Venue</p>
+                  <p className="text-sm font-bold text-[#1F1A1C]">{venueName}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-semibold text-[#6B6468] uppercase">Date</p>
+                  <p className="text-sm font-bold text-[#1F1A1C]">{formattedDate}</p>
+                </div>
+              </div>
+
+              <div className="flex justify-between items-start gap-4">
+                <div>
+                  <p className="text-xs font-semibold text-[#6B6468] uppercase">Event Name</p>
+                  <p className="text-sm font-semibold text-[#1F1A1C]">{eventDetails.eventName || '—'}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-semibold text-[#6B6468] uppercase">Time</p>
+                  <p className="text-sm font-semibold text-[#1F1A1C]">{timeLabel}</p>
+                </div>
+              </div>
+
+              <div className="flex justify-between items-start gap-4">
+                <div>
+                  <p className="text-xs font-semibold text-[#6B6468] uppercase">Purpose</p>
+                  <p className="text-sm text-[#1F1A1C] line-clamp-2">{eventDetails.eventPurpose || '—'}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-semibold text-[#6B6468] uppercase">Attendees</p>
+                  <p className="text-sm font-semibold text-[#1F1A1C]">{attendees} pax</p>
+                </div>
+              </div>
+
+              <div className="mt-2 bg-[#F9F7F8] p-4 rounded-xl border border-[#E3DEE0]">
+                <div className="flex justify-between items-center text-sm mb-1">
+                  <span className="text-[#6B6468]">
+                    {bookingType === 'daily' ? 'Daily Rate' : 'Hourly Rate'}
+                  </span>
+                  <span className="font-semibold text-[#1F1A1C]">RM {displayRate.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm mb-2">
+                  <span className="text-[#6B6468]">Deposit</span>
+                  <span className="font-semibold text-[#1F1A1C]">RM {displayDeposit.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t border-[#E3DEE0]">
+                  <span className="text-sm font-bold text-[#7A1F3D]">Total</span>
+                  <span className="text-base font-bold text-[#7A1F3D]">RM {totalAmount.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {requiresLetter && (
+                <div className="flex items-center gap-2 p-3 bg-green-50 text-green-700 rounded-lg border border-green-200 mt-1">
+                  <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                  <span className="text-xs font-semibold">Approval letter attached</span>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-[#E3DEE0] p-5 flex gap-3">
+              <button 
+                onClick={() => setShowSummaryModal(false)}
+                className="flex-1 py-3 bg-white border border-[#E3DEE0] text-[#1F1A1C] rounded-lg text-sm font-semibold hover:bg-gray-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleConfirmSubmit}
+                className="flex-1 py-3 bg-[#7A1F3D] text-white rounded-lg text-sm font-semibold hover:bg-[#5a162d] cursor-pointer"
+              >
+                Confirm & Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
