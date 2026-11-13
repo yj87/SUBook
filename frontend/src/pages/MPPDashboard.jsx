@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import ProfileModal from '../components/ProfileModal';
+import MPPSidebar from '../components/MPPSidebar'; // <-- Import shared sidebar
 
 const getWeekDays = () => {
   const current = new Date();
@@ -31,7 +32,6 @@ export default function MPPDashboard() {
   const [loading, setLoading] = useState(true);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
   const [popover, setPopover] = useState(null);
 
   const navigate = useNavigate();
@@ -135,18 +135,6 @@ export default function MPPDashboard() {
     };
   }, [popover]);
 
-  const handleLogout = async () => {
-    setLoggingOut(true);
-    sessionStorage.removeItem('intended_portal');
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error('Logout error:', error.message);
-      setLoggingOut(false);
-      return;
-    }
-    setTimeout(() => window.location.replace('/login'), 600);
-  };
-
   const formatTimeLabel = (timeStr) => {
     const [hour] = timeStr.split(':');
     let h = parseInt(hour);
@@ -241,55 +229,13 @@ export default function MPPDashboard() {
 
   return (
     <div className="flex h-screen bg-[#F6F4F5] overflow-hidden relative">
-
-      {isMobileMenuOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>
-      )}
-
-      <aside className={`
-        fixed md:static inset-y-0 left-0 z-50 w-[220px] bg-[#7A1F3D] text-white flex flex-col justify-between shrink-0 h-full transition-transform duration-300
-        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-      `}>
-        <div>
-          <div className="px-6 pt-6 pb-4 flex justify-between items-center">
-            <div>
-              <h1 className="text-[22px] font-bold">SUBook</h1>
-              <p className="text-[#E9C7D3] text-xs">MPP Admin</p>
-            </div>
-            <button className="md:hidden text-white" onClick={() => setIsMobileMenuOpen(false)}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 18L18 6M6 6l12 12"/></svg>
-            </button>
-          </div>
-
-          <nav className="flex flex-col mt-4">
-            <a href="#" className="bg-[#5E1730] px-6 py-4 text-sm font-semibold">Dashboard</a>
-            <a href="#" className="px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors">My Approval</a>
-            <a href="#" className="px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors">Calendar</a>
-            <a href="#" className="px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors">Venue Management</a>
-            <a href="#" className="px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors">Transaction History</a>
-            <a href="#" className="px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors">Reports & Analytics</a>
-          </nav>
-        </div>
-
-        <div className="p-6 border-t border-[#5E1730] flex flex-col gap-4">
-          <button
-            onClick={() => { setIsProfileOpen(true); setIsMobileMenuOpen(false); }}
-            className="text-left text-sm font-semibold hover:text-[#E9C7D3] transition-colors cursor-pointer"
-          >
-            Profile Settings
-          </button>
-          <button
-            onClick={handleLogout}
-            disabled={loggingOut}
-            className="flex items-center gap-2 text-left text-sm font-semibold hover:text-[#E9C7D3] transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {loggingOut && (
-              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            )}
-            {loggingOut ? 'Logging out…' : 'Log Out'}
-          </button>
-        </div>
-      </aside>
+      
+      {/* SHARED SIDEBAR */}
+      <MPPSidebar 
+        isMobileMenuOpen={isMobileMenuOpen} 
+        setIsMobileMenuOpen={setIsMobileMenuOpen} 
+        setIsProfileOpen={setIsProfileOpen} 
+      />
 
       <main className="flex-1 flex flex-col p-4 md:p-10 overflow-hidden h-full">
 
@@ -320,7 +266,10 @@ export default function MPPDashboard() {
           </div>
 
           <div className="w-full md:w-auto flex items-center justify-start md:justify-end">
-            <button className="bg-[#F2B705] text-[#1F1A1C] text-[13px] font-semibold rounded-lg px-6 h-11 hover:bg-yellow-500 transition-colors w-full md:w-auto cursor-pointer">
+            <button 
+              onClick={() => navigate('/mpp-dashboard/requests')} 
+              className="bg-[#F2B705] text-[#1F1A1C] text-[13px] font-semibold rounded-lg px-6 h-11 hover:bg-yellow-500 transition-colors w-full md:w-auto cursor-pointer"
+            >
               View Pending →
             </button>
           </div>
