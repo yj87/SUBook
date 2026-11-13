@@ -1,29 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import ProfileModal from '../components/ProfileModal';
-import MPPSidebar from '../components/MPPSidebar'; // <-- Import shared sidebar
-
-const getWeekDays = () => {
-  const current = new Date();
-  const day = current.getDay();
-  const diff = current.getDate() - day + (day === 0 ? -6 : 1);
-  const monday = new Date(current.setDate(diff));
-  monday.setHours(0, 0, 0, 0);
-  const days = [];
-  for (let i = 0; i < 7; i++) {
-    const nextDay = new Date(monday);
-    nextDay.setDate(monday.getDate() + i);
-    days.push(nextDay);
-  }
-  return days;
-};
-
-const timeSlots = [
-  '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00',
-  '17:00', '18:00', '19:00', '20:00', '21:00', '22:00', '23:00', '00:00'
-];
-
-const PREVIEW_COUNT = 2;
+import MPPSidebar from '../components/MPPSidebar';
 import BookingCalendar from '../components/BookingCalendar';
 import { API_BASE_URL } from '../config/api';
 import { addDays, dateKey, getMalaysiaWeek } from '../utils/bookingCalendar';
@@ -39,9 +18,10 @@ export default function MPPDashboard() {
   const [popover, setPopover] = useState(null);
 
   const navigate = useNavigate();
-  const weekDays = getWeekDays();
   const popoverRef = useRef(null);
   const [loggingOut, setLoggingOut] = useState(false);
+  
+  // FIXED: Removed the duplicate `const weekDays = getWeekDays();`
   const weekDays = useMemo(() => getMalaysiaWeek(), []);
 
   const startDay = weekDays[0].getDate();
@@ -56,60 +36,61 @@ export default function MPPDashboard() {
     const fetchDashboardData = async () => {
       setLoading(true);
       try {
+        const now = new Date();
+        const startOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
 
-      const now = new Date();
-      const startOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+        const [totalRes, pendingRes, confirmedRes] = await Promise.all([
+          supabase
+            .from('bookings')
+            .select('*', { count: 'exact', head: false }).limit(1)
+            .gte('submitted_at', startOfMonth.toISOString()),
+          supabase
+            .from('bookings')
+            .select('*', { count: 'exact', head: false }).limit(1)
+            .in('status', ['pending_approval', 'payment_submitted']),
+          supabase
+            .from('bookings')
+            .select('*', { count: 'exact', head: false }).limit(1)
+            .eq('status', 'confirmed'),
+        ]);
 
-      const [totalRes, pendingRes, confirmedRes] = await Promise.all([
-        supabase
-          .from('bookings')
-          .select('*', { count: 'exact', head: false }).limit(1)
-          .gte('submitted_at', startOfMonth.toISOString()),
-        supabase
-          .from('bookings')
-          .select('*', { count: 'exact', head: false }).limit(1)
-          .in('status', ['pending_approval', 'payment_submitted']),
-        supabase
-          .from('bookings')
-          .select('*', { count: 'exact', head: false }).limit(1)
-          .eq('status', 'confirmed'),
-      ]);
+        if (cancelled) return;
 
-      if (cancelled) return;
+        if (totalRes.error) console.error('Stats total:', totalRes.error);
+        if (pendingRes.error) console.error('Stats pending:', pendingRes.error);
+        if (confirmedRes.error) console.error('Stats confirmed:', confirmedRes.error);
 
-      if (totalRes.error) console.error('Stats total:', totalRes.error);
-      if (pendingRes.error) console.error('Stats pending:', pendingRes.error);
-      if (confirmedRes.error) console.error('Stats confirmed:', confirmedRes.error);
+        setStats({
+          total: totalRes.count ?? 0,
+          pending: pendingRes.count ?? 0,
+          confirmed: confirmedRes.count ?? 0,
+        });
 
-      setStats({
-        total: totalRes.count ?? 0,
-        pending: pendingRes.count ?? 0,
-        confirmed: confirmedRes.count ?? 0,
-      });
+        const startOfWeek = new Date(`${dateKey(weekDays[0])}T00:00:00+08:00`);
+        const endOfWeek = addDays(startOfWeek, 7);
+        
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) throw new Error('Your admin session has expired. Please sign in again.');
 
-      const startOfWeek = new Date(`${dateKey(weekDays[0])}T00:00:00+08:00`);
-      const endOfWeek = addDays(startOfWeek, 7);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error('Your admin session has expired. Please sign in again.');
+        const calendarResponse = await fetch(
+          `${API_BASE_URL}/api/bookings/calendar?start=${encodeURIComponent(startOfWeek.toISOString())}&end=${encodeURIComponent(endOfWeek.toISOString())}`,
+          { headers: { Authorization: `Bearer ${session.access_token}` } },
+        );
+        
+        const calendarBody = await calendarResponse.json();
+        if (!calendarResponse.ok) throw new Error(calendarBody.error || 'Unable to load calendar bookings');
 
-      const calendarResponse = await fetch(
-        `${API_BASE_URL}/api/bookings/calendar?start=${encodeURIComponent(startOfWeek.toISOString())}&end=${encodeURIComponent(endOfWeek.toISOString())}`,
-        { headers: { Authorization: `Bearer ${session.access_token}` } },
-      );
-      const calendarBody = await calendarResponse.json();
-      if (!calendarResponse.ok) throw new Error(calendarBody.error || 'Unable to load calendar bookings');
+        if (cancelled) return;
 
-      if (cancelled) return;
-
-      setCalendarError('');
-      setBookings(calendarBody.bookings || []);
-      setLoading(false);
-    } catch (error) {
-      if (cancelled) return;
-      console.error('Calendar data:', error);
-      setCalendarError(error.message || 'Unable to load calendar bookings');
-      setBookings([]);
-      setLoading(false);
+        setCalendarError('');
+        setBookings(calendarBody.bookings || []);
+        setLoading(false);
+      } catch (error) {
+        if (cancelled) return;
+        console.error('Calendar data:', error);
+        setCalendarError(error.message || 'Unable to load calendar bookings');
+        setBookings([]);
+        setLoading(false);
       }
     };
 
@@ -123,32 +104,6 @@ export default function MPPDashboard() {
     const ampm = h >= 12 ? 'PM' : 'AM';
     const displayH = h % 12 || 12;
     return `${displayH}:00 ${ampm}`;
-  };
-
-  const getBookingsForSlot = (dateObj, timeSlot) => {
-    const dateString = new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000)
-      .toISOString()
-      .split('T')[0];
-
-    const [slotHour] = timeSlot.split(':').map(Number);
-    const slotStart = new Date(dateObj);
-    slotStart.setHours(slotHour, 0, 0, 0);
-    const slotEnd = new Date(slotStart);
-    slotEnd.setHours(slotHour + 1, 0, 0, 0);
-
-    return bookings.filter((booking) => {
-      const bookingStart = new Date(booking.start_time);
-      const bookingEnd = new Date(booking.end_time);
-
-      const bookingDay = new Date(
-        bookingStart.getTime() - bookingStart.getTimezoneOffset() * 60000
-      )
-        .toISOString()
-        .split('T')[0];
-
-      if (bookingDay !== dateString) return false;
-      return bookingStart < slotEnd && bookingEnd > slotStart;
-    });
   };
 
   const openPopover = (e, cellBookings, day, time) => {
@@ -189,7 +144,7 @@ export default function MPPDashboard() {
           <p className="text-xs font-bold text-[#7A1F3D]">{title}</p>
           <button
             onClick={() => setPopover(null)}
-            className="text-[#6B6468] hover:text-[#7A1F3D] text-lg leading-none"
+            className="text-[#6B6468] hover:text-[#7A1F3D] text-lg leading-none cursor-pointer"
             aria-label="Close"
           >
             ×
@@ -207,6 +162,8 @@ export default function MPPDashboard() {
         </div>
       </div>
     );
+  }; 
+
   const handleLogout = async () => {
     setLoggingOut(true);
     sessionStorage.removeItem('intended_portal');
@@ -222,7 +179,6 @@ export default function MPPDashboard() {
   return (
     <div className="flex h-screen bg-[#F6F4F5] overflow-hidden relative">
       
-      {/* SHARED SIDEBAR */}
       <MPPSidebar 
         isMobileMenuOpen={isMobileMenuOpen} 
         setIsMobileMenuOpen={setIsMobileMenuOpen} 

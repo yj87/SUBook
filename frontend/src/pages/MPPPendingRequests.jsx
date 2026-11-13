@@ -11,6 +11,12 @@ export default function MPPPendingRequests() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // D1.4 & D1.5 States
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterVenue, setFilterVenue] = useState('All');
+  const [sortOrder, setSortOrder] = useState('newest');
+  const [filterUserType, setFilterUserType] = useState('All'); 
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectInput, setShowRejectInput] = useState(false);
@@ -34,7 +40,7 @@ export default function MPPPendingRequests() {
             status,
             quoted_rate,
             quoted_deposit,
-            profiles ( full_name, matric_no ),
+            profiles ( full_name, matric_no, role ), 
             venues ( venue_name, is_shared, capacity )
           `)
           .in('status', ['pending_approval', 'payment_submitted', 'approved', 'rejected'])
@@ -70,48 +76,32 @@ export default function MPPPendingRequests() {
     }
   };
 
-  // =====================================================================
-  // THE REAL VERIFICATION ENGINE
-  // =====================================================================
   const runOCRVerification = (request) => {
     if (!request || !request.approval_letter_url) return null;
 
-    // --- TEAMMATE TODO: REPLACE THIS WITH REAL AI OCR API CALL ---
     const mockAIData = {
       extracted_club_name: request.profiles?.full_name || 'Unknown Club',
       extracted_venue_name: request.venues?.venue_name || 'Unknown Venue',
-      extracted_date: request.start_time.split('T')[0], // Matches booking
-      extracted_issue_date: new Date().toISOString().split('T')[0], // Issued today
+      extracted_date: request.start_time.split('T')[0],
+      extracted_issue_date: new Date().toISOString().split('T')[0],
       extracted_attendees: request.expected_attendees,
       extracted_signatory: "Dean of Faculty" 
     };
-    // -------------------------------------------------------------
 
     const ai = mockAIData;
-
-    // 1. Club Name Matches
     const clubMatch = ai.extracted_club_name.toLowerCase().includes(request.profiles?.full_name?.toLowerCase() || '');
-
-    // 2. Event Date Matches Requested Date
     const reqDate = request.start_time.split('T')[0];
     const dateMatch = ai.extracted_date === reqDate;
-
-    // 3. Venue Alias Check
     const venueMatch = ai.extracted_venue_name.toLowerCase().includes(request.venues?.venue_name?.toLowerCase() || '');
-
-    // 4. Signatory Check
+    
     const validSignatories = ['dean', 'head of faculty', 'mpp president', 'professor', 'dr.'];
     const signatoryMatch = validSignatories.some(title => ai.extracted_signatory.toLowerCase().includes(title));
 
-    // 5. Validity Window Check (Must be today or in the future)
     const letterDate = new Date(ai.extracted_date);
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Reset time to midnight for accurate day comparison
-    
-    // Check if the letter's date is today or later
+    today.setHours(0, 0, 0, 0);
     const validityMatch = letterDate.getTime() >= today.getTime();
 
-    // 6. Attendee Capacity Check
     const capacityMatch = ai.extracted_attendees <= (request.venues?.capacity || 0);
 
     return {
@@ -126,7 +116,6 @@ export default function MPPPendingRequests() {
 
   const ocrResult = selectedRequest ? runOCRVerification(selectedRequest) : null;
 
-  // UI Helper to render a checkmark, warning, or cross
   const renderCheck = (label, status, type = 'match') => {
     if (status === null) return <p className="text-[#6B6468] italic">Pending OCR...</p>;
     
@@ -208,6 +197,30 @@ export default function MPPPendingRequests() {
     }
   };
 
+  const filteredAndSortedRequests = requests
+    .filter(req => {
+      const role = req.profiles?.role;
+      if (filterUserType === 'Student' && role !== 'student') return false;
+      if (filterUserType === 'Club' && role !== 'club_representative') return false;
+
+      const matchesSearch = 
+        (req.profiles?.full_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (req.event_name || '').toLowerCase().includes(searchQuery.toLowerCase());
+      
+      const matchesVenue = filterVenue === 'All' || req.venues?.venue_name === filterVenue;
+
+      return matchesSearch && matchesVenue;
+    })
+    .sort((a, b) => {
+      if (sortOrder === 'newest') return new Date(b.submitted_at) - new Date(a.submitted_at);
+      if (sortOrder === 'oldest') return new Date(a.submitted_at) - new Date(b.submitted_at);
+      if (sortOrder === 'date_asc') return new Date(a.start_time) - new Date(b.start_time);
+      if (sortOrder === 'date_desc') return new Date(b.start_time) - new Date(a.start_time);
+      return 0;
+    });
+
+  const uniqueVenues = ['All', ...new Set(requests.map(r => r.venues?.venue_name).filter(Boolean))];
+
   return (
     <div className="flex h-screen bg-[#F6F4F5] overflow-hidden relative">
       
@@ -238,46 +251,98 @@ export default function MPPPendingRequests() {
             No pending requests at the moment. You're all caught up!
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[350px_1fr] gap-6 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
             
-            {/* LEFT: Requests List */}
+            {/* LEFT: Requests List (Slightly narrower) */}
             <div className="rounded-xl border border-[#E3DEE0] bg-white p-4">
               <h2 className="text-sm font-bold mb-4">Pending requests ({requests.filter(r => r.status === 'pending_approval').length})</h2>
-              <div className="flex flex-col gap-3">
-                {requests.map((req) => (
-                  <button
-                    key={req.booking_id}
-                    onClick={() => {
-                      setSelectedRequest(req);
-                      setShowRejectInput(false);
-                      setRejectReason('');
-                    }}
-                    className={`text-left p-3 rounded-lg border transition-colors ${
-                      selectedRequest?.booking_id === req.booking_id 
-                        ? 'bg-[#F6E9EE] border-[#7A1F3D]' 
-                        : 'bg-[#FAF8F9] border-[#E3DEE0] hover:bg-[#F3EEF0]'
-                    }`}
+              
+              <div className="flex flex-col gap-3 mb-4">
+                <input 
+                  type="text" 
+                  placeholder="Search applicant or event..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full p-2 border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <select 
+                    value={filterUserType} 
+                    onChange={(e) => setFilterUserType(e.target.value)}
+                    className="col-span-2 p-2 border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none bg-white cursor-pointer"
                   >
-                    <p className="font-semibold text-sm text-[#1F1A1C] truncate">
-                      {req.profiles?.full_name || 'Unknown User'}
-                    </p>
-                    <p className="text-xs text-[#6B6468] truncate mt-1">
-                      {req.venues?.venue_name} · {formatDate(req.start_time)}
-                    </p>
-                  </button>
-                ))}
+                    <option value="All">All Users</option>
+                    <option value="Student">Students Only</option>
+                    <option value="Club">Clubs Only</option>
+                  </select>
+
+                  <select 
+                    value={filterVenue} 
+                    onChange={(e) => setFilterVenue(e.target.value)}
+                    className="p-2 border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none bg-white cursor-pointer"
+                  >
+                    {uniqueVenues.map(v => (
+                      <option key={v} value={v}>{v === 'All' ? 'All Venues' : v}</option>
+                    ))}
+                  </select>
+                  
+                  <select 
+                    value={sortOrder} 
+                    onChange={(e) => setSortOrder(e.target.value)}
+                    className="p-2 border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none bg-white cursor-pointer"
+                  >
+                    <option value="newest">Newest</option>
+                    <option value="oldest">Oldest</option>
+                    <option value="date_asc">Date (Asc)</option>
+                    <option value="date_desc">Date (Desc)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                {filteredAndSortedRequests.length === 0 ? (
+                  <p className="text-xs text-[#6B6468] italic text-center py-4">No matching requests found.</p>
+                ) : (
+                  filteredAndSortedRequests.map((req) => (
+                    <button
+                      key={req.booking_id}
+                      onClick={() => {
+                        setSelectedRequest(req);
+                        setShowRejectInput(false);
+                        setRejectReason('');
+                      }}
+                      className={`text-left p-3 rounded-lg border transition-colors ${
+                        selectedRequest?.booking_id === req.booking_id 
+                          ? 'bg-[#F6E9EE] border-[#7A1F3D]' 
+                          : 'bg-[#FAF8F9] border-[#E3DEE0] hover:bg-[#F3EEF0]'
+                      }`}
+                    >
+                      <p className="font-semibold text-sm text-[#1F1A1C] truncate">
+                        {req.profiles?.full_name || 'Unknown User'}
+                      </p>
+                      <p className="text-xs text-[#6B6468] truncate mt-1">
+                        {req.venues?.venue_name} · {formatDate(req.start_time)}
+                      </p>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
 
-            {/* RIGHT: Details Panel */}
+            {/* RIGHT: Details Panel (Constrained Max Width) */}
             {selectedRequest && (
-              <div className="rounded-xl border border-[#E3DEE0] bg-white p-6 md:p-8">
+              <div className="rounded-xl border border-[#E3DEE0] bg-white p-6 md:p-8 max-w-3xl">
                 <div className="mb-6">
                   <h2 className="text-xl font-bold text-[#1F1A1C]">
                     {selectedRequest.profiles?.full_name} – {selectedRequest.venues?.venue_name}
                   </h2>
                   
-                  {/* Status Badge */}
+                  <div className="mt-1 flex items-center gap-2">
+                     <span className="text-xs font-semibold text-[#6B6468] uppercase tracking-wider">
+                        {selectedRequest.profiles?.role === 'club_representative' ? 'Club Representative' : 'Student'}
+                     </span>
+                  </div>
+
                   <div className={`mt-3 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold
                     ${selectedRequest.status === 'pending_approval' ? 'bg-[#FFF3CD] text-[#8A6D00]' : ''}
                     ${selectedRequest.status === 'payment_submitted' ? 'bg-[#DCE8FF] text-[#1F4FA3]' : ''}
@@ -291,7 +356,6 @@ export default function MPPPendingRequests() {
                   </div>
                 </div>
 
-                {/* Booking Info */}
                 <div className="text-sm text-[#1F1A1C] space-y-1 mb-6">
                   <p><strong>Matric No:</strong> {selectedRequest.profiles?.matric_no || '—'}</p>
                   <p><strong>Date & Time:</strong> {formatDate(selectedRequest.start_time)}, {selectedRequest.booking_type === 'daily' ? 'Whole Day' : `${formatTime(selectedRequest.start_time)} – ${formatTime(selectedRequest.end_time)}`}</p>
@@ -300,7 +364,6 @@ export default function MPPPendingRequests() {
                   <p><strong>Rate:</strong> RM {Number(selectedRequest.quoted_rate || 0).toFixed(2)} fee + RM {Number(selectedRequest.quoted_deposit || 0).toFixed(2)} deposit</p>
                 </div>
 
-                {/* Document & OCR Check */}
                 <div className="rounded-xl bg-[#F3EEF0] p-5 mb-8">
                   <h3 className="text-sm font-bold text-[#1F1A1C] mb-3">
                     {selectedRequest.status === 'pending_approval' ? 'Uploaded approval letter + AI OCR check' : 'Payment window (24 hours)'}
@@ -309,24 +372,14 @@ export default function MPPPendingRequests() {
                   {selectedRequest.status === 'pending_approval' && (
                     <div className="text-sm space-y-1.5">
                       
-                      {/* THE 6 SMART CHECKS */}
                       {selectedRequest.approval_letter_url ? (
                         ocrResult && (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
-                            {/* 1 & 2: Club & Date */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 mb-4">
                             {renderCheck('Club name matches', ocrResult.clubMatch)}
                             {renderCheck('Event date matches request', ocrResult.dateMatch)}
-                            
-                            {/* 3: Venue */}
                             {renderCheck('Venue matches selection', ocrResult.venueMatch)}
-                            
-                            {/* 4: Signatory (Warning style) */}
                             {renderCheck('Valid signatory detected', ocrResult.signatoryMatch, 'warning')}
-                            
-                            {/* 5: Validity Window (Warning style) */}
                             {renderCheck('Letter date is valid (Today or Future)', ocrResult.validityMatch, 'warning')}
-                            
-                            {/* 6: Capacity (Warning style) */}
                             {renderCheck(`Attendees within capacity (${selectedRequest.venues?.capacity})`, ocrResult.capacityMatch, 'warning')}
                           </div>
                         )
@@ -362,7 +415,6 @@ export default function MPPPendingRequests() {
                   )}
                 </div>
 
-                {/* Action Buttons */}
                 <div className="flex flex-wrap gap-4">
                   {selectedRequest.status === 'pending_approval' && !showRejectInput && (
                     <>
