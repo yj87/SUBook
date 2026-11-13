@@ -10,31 +10,17 @@ import {
   getHourlyPosition,
   normalizeBooking,
 } from '../utils/bookingCalendar';
-
-const STATUS_STYLES = {
-  pending: { label: 'Pending', tone: 'amber', dot: 'bg-amber-500' },
-  pending_approval: { label: 'Pending', tone: 'amber', dot: 'bg-amber-500' },
-  approved_awaiting_payment: { label: 'Awaiting payment', tone: 'blue', dot: 'bg-blue-500' },
-  confirmed: { label: 'Confirmed', tone: 'green', dot: 'bg-emerald-500' },
-};
-
-const TONE_CLASSES = {
-  amber: 'border-amber-300 bg-amber-50 text-amber-900',
-  blue: 'border-blue-300 bg-blue-50 text-blue-900',
-  green: 'border-emerald-300 bg-emerald-50 text-emerald-900',
-};
-
-const statusStyle = (status) => STATUS_STYLES[status] || { label: status, tone: 'blue', dot: 'bg-slate-500' };
+import { BOOKING_STATUS_TONE_CLASSES, getBookingStatusStyle } from '../utils/bookingStatusStyles';
 
 function BookingCard({ booking, onSelect, compact = false, style }) {
-  const status = statusStyle(booking.status);
+  const status = getBookingStatusStyle(booking.status);
   return (
     <button
       type="button"
       title={`${booking.title} · ${booking.venueName}`}
       onClick={() => onSelect(booking)}
       style={style}
-      className={`absolute z-[2] min-w-0 overflow-hidden rounded-md border border-l-4 p-1.5 text-left shadow-sm transition hover:z-10 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#7A1F3D] ${TONE_CLASSES[status.tone]}`}
+      className={`absolute z-[2] min-w-0 overflow-hidden rounded-md border border-l-4 p-1.5 text-left shadow-sm transition hover:z-10 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#7A1F3D] ${BOOKING_STATUS_TONE_CLASSES[status.tone]}`}
     >
       <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle ${status.dot}`} />
       <span className="block truncate text-[10px] font-bold leading-tight">{booking.venueName}</span>
@@ -48,7 +34,7 @@ function BookingCard({ booking, onSelect, compact = false, style }) {
 
 function BookingDetails({ booking, onClose }) {
   if (!booking) return null;
-  const status = statusStyle(booking.status);
+  const status = getBookingStatusStyle(booking.status);
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40 p-4" role="presentation" onMouseDown={onClose}>
       <section className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="booking-details-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -96,7 +82,7 @@ export default function BookingCalendar({ days, bookings, loading, error, onRetr
             {days.map((day) => (
               <div key={dateKey(day)} className="min-h-12 border-l border-[#E3DEE0] p-1">
                 <div className="flex flex-col gap-1">
-                  {allDayBookings(day).map((booking) => <button key={booking.booking_id} type="button" onClick={() => setSelectedBooking(booking)} title={`${booking.venueName} · Full day`} className={`truncate rounded border-l-4 px-2 py-1 text-left text-[10px] font-semibold ${TONE_CLASSES[statusStyle(booking.status).tone]}`}><span className="mr-1">●</span>{booking.venueName}<span className="ml-1 font-normal">· Full day</span></button>)}
+                  {allDayBookings(day).map((booking) => <button key={booking.booking_id} type="button" onClick={() => setSelectedBooking(booking)} title={`${booking.venueName} · Full day`} className={`truncate rounded border-l-4 px-2 py-1 text-left text-[10px] font-semibold ${BOOKING_STATUS_TONE_CLASSES[getBookingStatusStyle(booking.status).tone]}`}><span className="mr-1">●</span>{booking.venueName}<span className="ml-1 font-normal">· Full day</span></button>)}
                 </div>
               </div>
             ))}
