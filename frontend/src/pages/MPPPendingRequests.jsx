@@ -4,7 +4,7 @@ import MPPSidebar from '../components/MPPSidebar';
 import { supabase } from '../supabaseClient';
 
 const PENDING           = 'pending_approval';
-const AWAITING_PAYMENT  = 'approved_awaiting_payment';
+const AWAITING_PAYMENT  = 'awaiting_payment';
 const CONFIRMED         = 'confirmed';
 const REJECTED          = 'rejected';
 const CANCELLED         = 'cancelled';
@@ -29,6 +29,7 @@ export default function MPPPendingRequests() {
   const [filterVenue, setFilterVenue] = useState('All');
   const [sortOrder, setSortOrder] = useState('newest');
   const [filterUserType, setFilterUserType] = useState('All');
+  const [filterStatus, setFilterStatus] = useState('All'); 
 
   // Action state
   const [isProcessing, setIsProcessing] = useState(false);
@@ -173,7 +174,6 @@ export default function MPPPendingRequests() {
       });
       if (error) throw error;
 
-      // RPC returns { success, booking_id, payment_amount, payment_deadline }
       const patch = { status: AWAITING_PAYMENT };
       setRequests(requests.map(r =>
         r.booking_id === selectedRequest.booking_id ? { ...r, ...patch } : r));
@@ -200,7 +200,6 @@ export default function MPPPendingRequests() {
 
       if (error) throw error;
 
-      // Notify applicant of rejection
       await supabase.from('notifications').insert({
         profile_id: selectedRequest.profiles.profile_id,
         booking_id: selectedRequest.booking_id,
@@ -227,6 +226,11 @@ export default function MPPPendingRequests() {
       const role = req.profiles?.role;
       if (filterUserType === 'Student' && role !== 'student') return false;
       if (filterUserType === 'Club'    && role !== 'club_representative') return false;
+
+      if (filterStatus === 'Pending' && req.status !== PENDING) return false;
+      if (filterStatus === 'Awaiting Payment' && req.status !== AWAITING_PAYMENT) return false;
+      if (filterStatus === 'Confirmed' && req.status !== CONFIRMED) return false;
+      if (filterStatus === 'Rejected' && req.status !== REJECTED) return false;
 
       const matchesSearch =
         (req.profiles?.full_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -284,7 +288,7 @@ export default function MPPPendingRequests() {
             No booking requests at the moment. You're all caught up!
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6 items-start">
             {/* LEFT: Requests List */}
             <div className="rounded-xl border border-[#E3DEE0] bg-white p-4">
               <h2 className="text-sm font-bold mb-4">
@@ -299,17 +303,34 @@ export default function MPPPendingRequests() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full p-2 border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none"
                 />
+                
+                {/* User & Status Side-by-Side */}
                 <div className="grid grid-cols-2 gap-2">
                   <select
                     value={filterUserType}
                     onChange={(e) => setFilterUserType(e.target.value)}
-                    className="col-span-2 p-2 border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none bg-white cursor-pointer"
+                    className="p-2 border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none bg-white cursor-pointer"
                   >
                     <option value="All">All Users</option>
-                    <option value="Student">Students Only</option>
-                    <option value="Club">Clubs Only</option>
+                    <option value="Student">Students</option>
+                    <option value="Club">Clubs</option>
                   </select>
 
+                  <select
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    className="p-2 border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none bg-white cursor-pointer"
+                  >
+                    <option value="All">All Status</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Awaiting Payment">Awaiting Pay</option>
+                    <option value="Confirmed">Confirmed</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+
+                {/* Venue & Sort Side-by-Side */}
+                <div className="grid grid-cols-2 gap-2">
                   <select
                     value={filterVenue}
                     onChange={(e) => setFilterVenue(e.target.value)}
@@ -353,29 +374,33 @@ export default function MPPPendingRequests() {
                           : 'bg-[#FAF8F9] border-[#E3DEE0] hover:bg-[#F3EEF0]'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-semibold text-sm text-[#1F1A1C] truncate">
-                          {req.profiles?.full_name || 'Unknown User'}
-                        </p>
-                        {req.status !== PENDING && (
-                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold
-                            ${req.status === AWAITING_PAYMENT ? 'bg-[#DCE8FF] text-[#1F4FA3]' : ''}
-                            ${req.status === CONFIRMED        ? 'bg-[#CDEFD6] text-[#17703A]' : ''}
-                            ${req.status === REJECTED         ? 'bg-[#FFCDCD] text-[#D57171]' : ''}
-                            ${req.status === CANCELLED        ? 'bg-[#EDEDED] text-[#6B6468]' : ''}
-                            ${req.status === EXPIRED          ? 'bg-[#F2E3CC] text-[#8A6D00]' : ''}
-                          `}>
-                            {req.status === AWAITING_PAYMENT && 'Awaiting Pay'}
-                            {req.status === CONFIRMED        && 'Confirmed'}
-                            {req.status === REJECTED         && 'Rejected'}
-                            {req.status === CANCELLED        && 'Cancelled'}
-                            {req.status === EXPIRED          && 'Expired'}
-                          </span>
-                        )}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-sm text-[#1F1A1C] truncate">
+                            {req.profiles?.full_name || 'Unknown User'}
+                          </p>
+                          <p className="text-xs text-[#6B6468] truncate mt-1">
+                            {req.venues?.venue_name} · {formatDate(req.start_time)}
+                          </p>
+                        </div>
+                        
+                        {/* STATUS BADGE */}
+                        <span className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-wide
+                          ${req.status === PENDING          ? 'bg-[#FFF3CD] text-[#8A6D00]' : ''}
+                          ${req.status === AWAITING_PAYMENT ? 'bg-[#DCE8FF] text-[#1F4FA3]' : ''}
+                          ${req.status === CONFIRMED        ? 'bg-[#CDEFD6] text-[#17703A]' : ''}
+                          ${req.status === REJECTED         ? 'bg-[#FFCDCD] text-[#D57171]' : ''}
+                          ${req.status === CANCELLED        ? 'bg-[#EDEDED] text-[#6B6468]' : ''}
+                          ${req.status === EXPIRED          ? 'bg-[#F2E3CC] text-[#8A6D00]' : ''}
+                        `}>
+                          {req.status === PENDING          && 'Pending'}
+                          {req.status === AWAITING_PAYMENT && 'Awaiting Pay'}
+                          {req.status === CONFIRMED        && 'Confirmed'}
+                          {req.status === REJECTED         && 'Rejected'}
+                          {req.status === CANCELLED        && 'Cancelled'}
+                          {req.status === EXPIRED          && 'Expired'}
+                        </span>
                       </div>
-                      <p className="text-xs text-[#6B6468] truncate mt-1">
-                        {req.venues?.venue_name} · {formatDate(req.start_time)}
-                      </p>
                     </button>
                   ))
                 )}
