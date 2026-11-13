@@ -36,7 +36,7 @@ export const normalizeBooking = (booking) => ({
 });
 
 export const isVisibleBooking = (booking) =>
-  ['pending_approval', 'approved_awaiting_payment', 'confirmed'].includes(booking.status);
+  ['pending', 'pending_approval', 'approved_awaiting_payment', 'confirmed'].includes(booking.status);
 
 export const getDayIndex = (booking, day) => {
   const key = dateKey(day);
