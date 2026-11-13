@@ -18,6 +18,8 @@ import ClubRepLoginPage from './pages/ClubRepLoginPage'
 import StudentFAQPage from './pages/StudentFAQ'; 
 import ClubFAQPage from './pages/ClubFAQ';
 import BookingConfirmationPage from './pages/BookingConfirmationPage';
+import ClubBookingApproval from './pages/ClubBookingApproval';
+import MPPPendingRequests from './pages/MPPPendingRequests';
 
 
 function App() {
@@ -63,6 +65,7 @@ function App() {
         {/* MPP ADMIN ROUTES ONLY */}
         <Route element={<ProtectedRoute allowedRoles={['mpp_admin']} />}>
           <Route path="/mpp-dashboard" element={<MPPDashboard />} />
+          <Route path="/mpp-dashboard/requests" element={<MPPPendingRequests />} /> 
         </Route>
 
       </Routes>

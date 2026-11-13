@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import ProfileModal from '../components/ProfileModal';
+import MPPSidebar from '../components/MPPSidebar';
 import BookingCalendar from '../components/BookingCalendar';
 import { API_BASE_URL } from '../config/api';
 import { addDays, dateKey, getMalaysiaWeek } from '../utils/bookingCalendar';
@@ -13,7 +15,11 @@ export default function MPPDashboard() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [popover, setPopover] = useState(null);
   const [loggingOut, setLoggingOut] = useState(false);
+
+  const navigate = useNavigate();
+  const popoverRef = useRef(null);
   const weekDays = useMemo(() => getMalaysiaWeek(), []);
 
   const startDay = weekDays[0].getDate();
@@ -28,66 +34,133 @@ export default function MPPDashboard() {
     const fetchDashboardData = async () => {
       setLoading(true);
       try {
+        const now = new Date();
+        const startOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
 
-      const now = new Date();
-      const startOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+        const [totalRes, pendingRes, confirmedRes] = await Promise.all([
+          supabase
+            .from('bookings')
+            .select('*', { count: 'exact', head: false }).limit(1)
+            .gte('submitted_at', startOfMonth.toISOString()),
+          supabase
+            .from('bookings')
+            .select('*', { count: 'exact', head: false }).limit(1)
+            .in('status', ['pending_approval', 'payment_submitted']),
+          supabase
+            .from('bookings')
+            .select('*', { count: 'exact', head: false }).limit(1)
+            .eq('status', 'confirmed'),
+        ]);
 
-      const [totalRes, pendingRes, confirmedRes] = await Promise.all([
-        supabase
-          .from('bookings')
-          .select('*', { count: 'exact', head: false }).limit(1)
-          .gte('submitted_at', startOfMonth.toISOString()),
-        supabase
-          .from('bookings')
-          .select('*', { count: 'exact', head: false }).limit(1)
-          .in('status', ['pending_approval', 'payment_submitted']),
-        supabase
-          .from('bookings')
-          .select('*', { count: 'exact', head: false }).limit(1)
-          .eq('status', 'confirmed'),
-      ]);
+        if (cancelled) return;
 
-      if (cancelled) return;
+        if (totalRes.error) console.error('Stats total:', totalRes.error);
+        if (pendingRes.error) console.error('Stats pending:', pendingRes.error);
+        if (confirmedRes.error) console.error('Stats confirmed:', confirmedRes.error);
 
-      if (totalRes.error) console.error('Stats total:', totalRes.error);
-      if (pendingRes.error) console.error('Stats pending:', pendingRes.error);
-      if (confirmedRes.error) console.error('Stats confirmed:', confirmedRes.error);
+        setStats({
+          total: totalRes.count ?? 0,
+          pending: pendingRes.count ?? 0,
+          confirmed: confirmedRes.count ?? 0,
+        });
 
-      setStats({
-        total: totalRes.count ?? 0,
-        pending: pendingRes.count ?? 0,
-        confirmed: confirmedRes.count ?? 0,
-      });
+        const startOfWeek = new Date(`${dateKey(weekDays[0])}T00:00:00+08:00`);
+        const endOfWeek = addDays(startOfWeek, 7);
+        
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) throw new Error('Your admin session has expired. Please sign in again.');
 
-      const startOfWeek = new Date(`${dateKey(weekDays[0])}T00:00:00+08:00`);
-      const endOfWeek = addDays(startOfWeek, 7);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error('Your admin session has expired. Please sign in again.');
+        const calendarResponse = await fetch(
+          `${API_BASE_URL}/api/bookings/calendar?start=${encodeURIComponent(startOfWeek.toISOString())}&end=${encodeURIComponent(endOfWeek.toISOString())}`,
+          { headers: { Authorization: `Bearer ${session.access_token}` } },
+        );
+        
+        const calendarBody = await calendarResponse.json();
+        if (!calendarResponse.ok) throw new Error(calendarBody.error || 'Unable to load calendar bookings');
 
-      const calendarResponse = await fetch(
-        `${API_BASE_URL}/api/bookings/calendar?start=${encodeURIComponent(startOfWeek.toISOString())}&end=${encodeURIComponent(endOfWeek.toISOString())}`,
-        { headers: { Authorization: `Bearer ${session.access_token}` } },
-      );
-      const calendarBody = await calendarResponse.json();
-      if (!calendarResponse.ok) throw new Error(calendarBody.error || 'Unable to load calendar bookings');
+        if (cancelled) return;
 
-      if (cancelled) return;
-
-      setCalendarError('');
-      setBookings(calendarBody.bookings || []);
-      setLoading(false);
-    } catch (error) {
-      if (cancelled) return;
-      console.error('Calendar data:', error);
-      setCalendarError(error.message || 'Unable to load calendar bookings');
-      setBookings([]);
-      setLoading(false);
+        setCalendarError('');
+        setBookings(calendarBody.bookings || []);
+        setLoading(false);
+      } catch (error) {
+        if (cancelled) return;
+        console.error('Calendar data:', error);
+        setCalendarError(error.message || 'Unable to load calendar bookings');
+        setBookings([]);
+        setLoading(false);
       }
     };
 
     fetchDashboardData();
     return () => { cancelled = true; };
   }, [refreshKey, weekDays]);
+
+  const formatTimeLabel = (timeStr) => {
+    const [hour] = timeStr.split(':');
+    let h = parseInt(hour);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const displayH = h % 12 || 12;
+    return `${displayH}:00 ${ampm}`;
+  };
+
+  const openPopover = (e, cellBookings, day, time) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPopover({
+      anchorRect: rect,
+      bookings: cellBookings,
+      title: `${day.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })} · ${formatTimeLabel(time)}`,
+    });
+  };
+
+  const renderPopover = () => {
+    if (!popover) return null;
+    const { anchorRect, bookings: cellBookings, title } = popover;
+    const popoverWidth = 288;
+    const margin = 8;
+
+    let left = anchorRect.left + anchorRect.width / 2 - popoverWidth / 2;
+    let top = anchorRect.bottom + margin;
+
+    if (left < margin) left = margin;
+    if (left + popoverWidth > window.innerWidth - margin) {
+      left = window.innerWidth - popoverWidth - margin;
+    }
+
+    const estimatedHeight = Math.min(cellBookings.length * 60 + 60, 360);
+    if (top + estimatedHeight > window.innerHeight - margin) {
+      top = anchorRect.top - estimatedHeight - margin;
+    }
+
+    return (
+      <div
+        ref={popoverRef}
+        style={{ position: 'fixed', left, top, width: popoverWidth }}
+        className="z-[100] rounded-xl border border-[#E3DEE0] bg-white shadow-xl overflow-hidden"
+      >
+        <div className="flex items-center justify-between border-b border-[#E3DEE0] px-4 py-2.5">
+          <p className="text-xs font-bold text-[#7A1F3D]">{title}</p>
+          <button
+            onClick={() => setPopover(null)}
+            className="text-[#6B6468] hover:text-[#7A1F3D] text-lg leading-none cursor-pointer"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div className="max-h-80 overflow-y-auto divide-y divide-[#F0EBED]">
+          {cellBookings.map((booking) => (
+            <div key={booking.booking_id} className="px-4 py-2.5">
+              <p className="text-sm font-semibold text-[#1F1A1C]">{booking.event_name}</p>
+              <p className="mt-0.5 text-xs text-[#6B6468]">
+                {booking.venues?.venue_name || 'Venue'} · {new Date(booking.start_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}–{new Date(booking.end_time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }; 
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -103,55 +176,12 @@ export default function MPPDashboard() {
 
   return (
     <div className="flex h-screen bg-[#F6F4F5] overflow-hidden relative">
-
-      {isMobileMenuOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>
-      )}
-
-      <aside className={`
-        fixed md:static inset-y-0 left-0 z-50 w-[220px] bg-[#7A1F3D] text-white flex flex-col justify-between shrink-0 h-full transition-transform duration-300
-        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-      `}>
-        <div>
-          <div className="px-6 pt-6 pb-4 flex justify-between items-center">
-            <div>
-              <h1 className="text-[22px] font-bold">SUBook</h1>
-              <p className="text-[#E9C7D3] text-xs">MPP Admin</p>
-            </div>
-            <button className="md:hidden text-white" onClick={() => setIsMobileMenuOpen(false)}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 18L18 6M6 6l12 12"/></svg>
-            </button>
-          </div>
-
-          <nav className="flex flex-col mt-4">
-            <a href="#" className="bg-[#5E1730] px-6 py-4 text-sm font-semibold">Dashboard</a>
-            <a href="#" className="px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors">My Approval</a>
-            <a href="#" className="px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors">Calendar</a>
-            <a href="#" className="px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors">Venue Management</a>
-            <a href="#" className="px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors">Transaction History</a>
-            <a href="#" className="px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors">Reports & Analytics</a>
-          </nav>
-        </div>
-
-        <div className="p-6 border-t border-[#5E1730] flex flex-col gap-4">
-          <button
-            onClick={() => { setIsProfileOpen(true); setIsMobileMenuOpen(false); }}
-            className="text-left text-sm font-semibold hover:text-[#E9C7D3] transition-colors cursor-pointer"
-          >
-            Profile Settings
-          </button>
-          <button
-            onClick={handleLogout}
-            disabled={loggingOut}
-            className="flex items-center gap-2 text-left text-sm font-semibold hover:text-[#E9C7D3] transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {loggingOut && (
-              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            )}
-            {loggingOut ? 'Logging out…' : 'Log Out'}
-          </button>
-        </div>
-      </aside>
+      
+      <MPPSidebar 
+        isMobileMenuOpen={isMobileMenuOpen} 
+        setIsMobileMenuOpen={setIsMobileMenuOpen} 
+        setIsProfileOpen={setIsProfileOpen} 
+      />
 
       <main className="flex-1 flex flex-col p-4 md:p-10 overflow-hidden h-full">
 
@@ -182,7 +212,10 @@ export default function MPPDashboard() {
           </div>
 
           <div className="w-full md:w-auto flex items-center justify-start md:justify-end">
-            <button className="bg-[#F2B705] text-[#1F1A1C] text-[13px] font-semibold rounded-lg px-6 h-11 hover:bg-yellow-500 transition-colors w-full md:w-auto cursor-pointer">
+            <button 
+              onClick={() => navigate('/mpp-dashboard/requests')} 
+              className="bg-[#F2B705] text-[#1F1A1C] text-[13px] font-semibold rounded-lg px-6 h-11 hover:bg-yellow-500 transition-colors w-full md:w-auto cursor-pointer"
+            >
               View Pending →
             </button>
           </div>

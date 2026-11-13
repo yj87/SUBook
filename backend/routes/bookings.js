@@ -313,6 +313,7 @@ router.post(
         expected_attendees,
         start_time,
         end_time,
+        approval_letter_url, // <--- ADDED HERE
       } = req.body || {};
 
       // ---------- Basic field validation ----------
@@ -574,6 +575,7 @@ router.post(
             status: 'pending_approval',
             quoted_rate: quotedRate.toFixed(2),
             quoted_deposit: quotedDeposit.toFixed(2),
+            approval_letter_url: approval_letter_url || null, // <--- ADDED HERE
           })
           .select(
             'booking_id, venue_id, booking_type, status, start_time, end_time, quoted_rate, quoted_deposit'
