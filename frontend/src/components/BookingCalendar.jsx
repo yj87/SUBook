@@ -12,6 +12,7 @@ import {
 } from '../utils/bookingCalendar';
 
 const STATUS_STYLES = {
+  pending: { label: 'Pending', tone: 'amber', dot: 'bg-amber-500' },
   pending_approval: { label: 'Pending', tone: 'amber', dot: 'bg-amber-500' },
   approved_awaiting_payment: { label: 'Awaiting payment', tone: 'blue', dot: 'bg-blue-500' },
   confirmed: { label: 'Confirmed', tone: 'green', dot: 'bg-emerald-500' },

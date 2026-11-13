@@ -30,6 +30,7 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 });
 
 const ACTIVE_BOOKING_STATUSES = [
+  'pending',
   'pending_approval',
   'confirmed',
   'approved_awaiting_payment',
