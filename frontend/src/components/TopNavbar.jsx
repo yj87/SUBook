@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom'; // Imported useLocation
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 
 export default function TopNavbar({ role, onProfileOpen }) {
@@ -7,7 +7,7 @@ export default function TopNavbar({ role, onProfileOpen }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const navigate = useNavigate();
-  const location = useLocation(); // Get current URL
+  const location = useLocation();
   const navRef = useRef(null);
 
   useEffect(() => {
@@ -50,7 +50,6 @@ export default function TopNavbar({ role, onProfileOpen }) {
   const faqPath = isStudent ? '/student-faq' : '/club-faq';
   const roleLabel = isStudent ? 'Student' : 'Club Rep';
 
-  // Helper to determine if a link is active
   const checkActive = (path) => {
     if (path === homePath) return location.pathname === homePath;
     if (path === faqPath) return location.pathname === faqPath;
@@ -58,7 +57,8 @@ export default function TopNavbar({ role, onProfileOpen }) {
   };
 
   return (
-    <header className="w-full bg-white border-b border-[#E3DEE0] h-16 flex items-center justify-between px-6 md:px-12 shrink-0 relative z-50 font-inter" ref={navRef}>
+    // ADDED: sticky top-0
+    <header className="w-full bg-white border-b border-[#E3DEE0] h-16 flex items-center justify-between px-6 md:px-12 shrink-0 sticky top-0 z-50 font-inter" ref={navRef}>
 
       <div className="flex items-center gap-4 md:gap-24">
         <button
@@ -87,7 +87,7 @@ export default function TopNavbar({ role, onProfileOpen }) {
             <button 
               onClick={() => toggleDropdown('venue')} 
               className={`flex items-center gap-1 py-4 cursor-pointer transition-colors ${
-                location.pathname.startsWith('/venues') || activeDropdown === 'venue' ? "text-[#7A1F3D]" : "hover:text-[#7A1F3D]"
+                location.pathname.startsWith('/venues') || location.pathname.startsWith('/booking-request') || activeDropdown === 'venue' ? "text-[#7A1F3D]" : "hover:text-[#7A1F3D]"
               }`}
             >
               Venue & Booking
@@ -98,7 +98,7 @@ export default function TopNavbar({ role, onProfileOpen }) {
                 <button 
                   onClick={() => { navigate('/venues'); setActiveDropdown(null); }} 
                   className={`text-left px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold cursor-pointer ${
-                    location.pathname.startsWith('/venues') ? "text-[#7A1F3D]" : "text-[#1F1A1C]"
+                    location.pathname.startsWith('/venues') || location.pathname.startsWith('/booking-request') ? "text-[#7A1F3D]" : "text-[#1F1A1C]"
                   }`}
                 >
                   Book Venue
