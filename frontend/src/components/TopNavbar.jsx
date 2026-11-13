@@ -87,7 +87,7 @@ export default function TopNavbar({ role, onProfileOpen }) {
             <button 
               onClick={() => toggleDropdown('venue')} 
               className={`flex items-center gap-1 py-4 cursor-pointer transition-colors ${
-                location.pathname.startsWith('/venues') || location.pathname.startsWith('/booking-request') || activeDropdown === 'venue' ? "text-[#7A1F3D]" : "hover:text-[#7A1F3D]"
+                location.pathname.startsWith('/venues') || activeDropdown === 'venue' ? "text-[#7A1F3D]" : "hover:text-[#7A1F3D]"
               }`}
             >
               Venue & Booking
@@ -98,7 +98,7 @@ export default function TopNavbar({ role, onProfileOpen }) {
                 <button 
                   onClick={() => { navigate('/venues'); setActiveDropdown(null); }} 
                   className={`text-left px-4 py-3 hover:bg-[#FAF3F6] text-sm font-semibold cursor-pointer ${
-                    location.pathname.startsWith('/venues') || location.pathname.startsWith('/booking-request') ? "text-[#7A1F3D]" : "text-[#1F1A1C]"
+                    location.pathname.startsWith('/venues') ? "text-[#7A1F3D]" : "text-[#1F1A1C]"
                   }`}
                 >
                   Book Venue

@@ -18,7 +18,6 @@ import ClubRepLoginPage from './pages/ClubRepLoginPage'
 import StudentFAQPage from './pages/StudentFAQ'; 
 import ClubFAQPage from './pages/ClubFAQ';
 import BookingConfirmationPage from './pages/BookingConfirmationPage';
-import ClubBookingApproval from './pages/ClubBookingApproval';
 
 
 function App() {
@@ -59,7 +58,6 @@ function App() {
         <Route element={<ProtectedRoute allowedRoles={['club_representative']} />}>
           <Route path="/club-dashboard" element={<ClubDashboard />} />
           <Route path="/club-faq" element={<ClubFAQPage />} />
-          <Route path="/booking-request/approval" element={<ClubBookingApproval />} />
         </Route>
 
         {/* MPP ADMIN ROUTES ONLY */}
