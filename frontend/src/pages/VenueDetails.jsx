@@ -5,7 +5,6 @@ import ProfileModal from '../components/ProfileModal';
 import { supabase } from '../supabaseClient';
 import { fetchVenue } from '../config/api';
 
-
 const facilitiesByVenue = {
   'dance studio': ['Wi-Fi', 'Air-conditioned', 'PA System', 'Projector', 'No Shoes Area'],
   'seminar hall': ['Wi-Fi', 'Air-conditioned', 'PA System', 'Projector & LCD', 'Pantry', 'Preparation Room', 'Banquet Chairs & Round Tables'],
@@ -26,7 +25,6 @@ const photoByVenue = {
   'open space': ['Open Space.png', 'Open Space2.png']
 };
 
-
 const money = (value) => (
   value == null || value === '' || !Number.isFinite(Number(value))
     ? 'Not set'
@@ -40,9 +38,12 @@ export default function VenueDetails() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedPhoto, setSelectedPhoto] = useState('');
-  const [role, setRole] = useState('student');
+  
+  // 1. Initialize role as NULL
+  const [role, setRole] = useState(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
+  // Fetch Role
   useEffect(() => {
     let cancelled = false;
     const loadRole = async () => {
@@ -61,35 +62,31 @@ export default function VenueDetails() {
     return () => { cancelled = true; };
   }, []);
 
-  
-useEffect(() => {
-  let cancelled = false;
-
-  async function loadVenue() {
-    setLoading(true);
-    setError('');
-    try {
-      const result = await fetchVenue(venueId);
-      if (cancelled) return;
-      setVenue(result.data);
-    } catch (err) {
-      if (!cancelled) setError(err.message);
-    } finally {
-      if (!cancelled) setLoading(false);
+  // Fetch Venue
+  useEffect(() => {
+    let cancelled = false;
+    async function loadVenue() {
+      setLoading(true);
+      setError('');
+      try {
+        const result = await fetchVenue(venueId);
+        if (cancelled) return;
+        setVenue(result.data);
+      } catch (err) {
+        if (!cancelled) setError(err.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-  }
+    loadVenue();
+    return () => { cancelled = true; };
+  }, [venueId]);
 
-  loadVenue();
-  return () => { cancelled = true; };
-}, [venueId]);
+  const facilities = useMemo(() => {
+    const list = facilitiesByVenue[String(venue?.venue_name || '').toLowerCase().trim()];
+    return list ? list : [];
+  }, [venue]);
 
-  // Build list of image URLs for the current venue
-  // Build list of image URLs for the current venue
-  // Build list of facilities for the current venue
-const facilities = useMemo(() => {
-  const list = facilitiesByVenue[String(venue?.venue_name || '').toLowerCase().trim()];
-  return list ? list : [];
-}, [venue]);
   const photos = useMemo(() => {
     const photoList = photoByVenue[String(venue?.venue_name || '').toLowerCase().trim()];
     if (!photoList) return [];
@@ -97,16 +94,12 @@ const facilities = useMemo(() => {
     return list.map((p) => `/venue-images/${encodeURIComponent(p)}`);
   }, [venue]);
 
-
-
-  // Set initial selected photo when photos array changes
   useEffect(() => {
     if (photos.length > 0) {
       setSelectedPhoto(photos[0]);
     }
   }, [photos]);
 
-  // Autoplay: cycle through photos every 3 seconds
   useEffect(() => {
     if (photos.length < 2) return;
     const interval = setInterval(() => {
@@ -120,19 +113,25 @@ const facilities = useMemo(() => {
     return () => clearInterval(interval);
   }, [photos]);
 
-
-
-
+  // 2. Wait for role to load
+  if (role === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F6F4F5]">
+        <div className="w-12 h-12 border-4 border-[#7A1F3D] border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center bg-[#F6F4F5] text-[#6B6468]" role="status">Loading venue details…</div>;
   }
 
   if (error || !venue) {
+    const dashboardPath = role === 'club_representative' ? '/club-dashboard' : '/student-dashboard';
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#F6F4F5] px-5 text-center">
         <p role="alert" className="rounded-xl border border-[#E3DEE0] bg-white p-6 text-[#6B6468]">{error || 'Venue not found'}</p>
-        <Link to="/venues" className="font-semibold text-[#7A1F3D] hover:underline">Back to venue catalogue</Link>
+        <Link to={dashboardPath} className="font-semibold text-[#7A1F3D] hover:underline">Back to Dashboard</Link>
       </div>
     );
   }
@@ -142,6 +141,7 @@ const facilities = useMemo(() => {
 
   return (
     <div className="min-h-screen bg-[#F6F4F5] font-inter text-[#1F1A1C]">
+      {/* 3. TopNavbar gets the correct role */}
       <TopNavbar role={role} onProfileOpen={setIsProfileOpen} />
 
       <main className="mx-auto max-w-[1280px] px-5 pb-24 pt-7 sm:px-[60px]">
@@ -152,17 +152,17 @@ const facilities = useMemo(() => {
         <h1 className="text-[28px] font-bold sm:text-[32px]">{venue.venue_name} – Venue Details</h1>
         <div className="mt-7 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
           <section className="rounded-xl border border-[#E3DEE0] bg-white p-4 sm:p-5" aria-label={`${venue.venue_name} photos`}>
-                    <div className="rounded-lg bg-[#E9DDE1] flex items-center justify-center">
-          {activePhoto ? (
-            <img
-              src={activePhoto}
-              alt={venue.venue_name}
-              className="max-w-full max-h-[260px] sm:max-h-[390px] object-contain"
-            />
-          ) : (
-            <div className="text-sm text-[#6B6468]">Venue image unavailable</div>
-          )}
-        </div>
+            <div className="rounded-lg bg-[#E9DDE1] flex items-center justify-center">
+              {activePhoto ? (
+                <img
+                  src={activePhoto}
+                  alt={venue.venue_name}
+                  className="max-w-full max-h-[260px] sm:max-h-[390px] object-contain"
+                />
+              ) : (
+                <div className="text-sm text-[#6B6468]">Venue image unavailable</div>
+              )}
+            </div>
 
             {photos.length > 0 && (
               <div className="mt-3 flex gap-3">
@@ -197,10 +197,10 @@ const facilities = useMemo(() => {
             <div className="mt-7 border-t border-[#E3DEE0] pt-5">
               <h3 className="text-base font-bold">Facilities</h3>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-relaxed text-[#6B6468]">
-  {facilities.map((f) => (
-    <li key={f}>{f}</li>
-  ))}
-</ul>
+                {facilities.map((f) => (
+                  <li key={f}>{f}</li>
+                ))}
+              </ul>
             </div>
 
             <div className="mt-5 border-t border-[#E3DEE0] pt-5">
