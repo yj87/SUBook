@@ -16,12 +16,10 @@ export default function MPPDashboard() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [popover, setPopover] = useState(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const navigate = useNavigate();
   const popoverRef = useRef(null);
-  const [loggingOut, setLoggingOut] = useState(false);
-  
-  // FIXED: Removed the duplicate `const weekDays = getWeekDays();`
   const weekDays = useMemo(() => getMalaysiaWeek(), []);
 
   const startDay = weekDays[0].getDate();
