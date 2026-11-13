@@ -21,7 +21,6 @@ import BookingConfirmationPage from './pages/BookingConfirmationPage';
 import ClubBookingApproval from './pages/ClubBookingApproval';
 import MPPPendingRequests from './pages/MPPPendingRequests';
 
-
 function App() {
   return (
     <BrowserRouter>
@@ -40,12 +39,18 @@ function App() {
         <Route element={<ProtectedRoute />}>
           <Route path="/onboarding" element={<Onboarding />} />
         </Route>
+        
         {/* STUDENT AND CLUB REPRESENTATIVE VENUE BROWSING */}
         <Route element={<ProtectedRoute allowedRoles={['student', 'club_representative']} />}>
           <Route path="/venues" element={<VenueCatalogue />} />
           <Route path="/venues/:venueId" element={<VenueDetails />} />
           <Route path="/venues/:venueId/availability" element={<AvailabilityPlaceholder />} />
+          
           <Route path="/booking-request" element={<BookingRequestPlaceholder />} />
+          
+          {/* ADD THIS LINE */}
+          <Route path="/booking-request/approval" element={<ClubBookingApproval />} /> 
+          
           <Route path="/booking-request/success" element={<BookingConfirmationPage />} />
         </Route>
 
@@ -53,7 +58,6 @@ function App() {
         <Route element={<ProtectedRoute allowedRoles={['student']} />}>
           <Route path="/student-dashboard" element={<StudentDashboard />} />
           <Route path="/student-faq" element={<StudentFAQPage />} />
-
         </Route>
 
         {/* CLUB REPRESENTATIVE ROUTES ONLY */}

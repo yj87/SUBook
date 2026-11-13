@@ -51,7 +51,8 @@ export default function BookingRequestPlaceholder() {
   const [submitError, setSubmitError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
 
-  const [role, setRole] = useState('student');
+  // Initialize role as null to prevent flickering
+  const [role, setRole] = useState(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   useEffect(() => {
@@ -91,9 +92,20 @@ export default function BookingRequestPlaceholder() {
         if (cancelled) return;
 
         setProfile(profileRes.data);
-        setRole(profileRes.data.role || 'student');
+        
+        // --- ROLE & REDIRECT LOGIC ---
+        const currentRole = profileRes.data.role || 'student';
+        setRole(currentRole);
         setVenue(venueBody.data);
 
+        // If Club Rep, instantly redirect to the Approval page
+        if (currentRole === 'club_representative') {
+          const queryParams = params.toString();
+          navigate(`/booking-request/approval?${queryParams}`, { replace: true });
+          return; 
+        }
+
+        // Student logic continues here
         const stored = profileRes.data.phone_no || '';
         setPhone(
           stored.startsWith('+60')
@@ -108,7 +120,7 @@ export default function BookingRequestPlaceholder() {
     })();
 
     return () => { cancelled = true; };
-  }, [venueId]);
+  }, [venueId, navigate, params]);
 
   const isShared = venue?.is_shared === true;
 
@@ -166,11 +178,11 @@ export default function BookingRequestPlaceholder() {
       const MY = 'Asia/Kuala_Lumpur';
       const startParts = new Intl.DateTimeFormat('en-CA', {
         timeZone: MY, year: 'numeric', month: '2-digit', day: '2-digit',
-      }).format(startDate);                              // "YYYY-MM-DD"
+      }).format(startDate);
 
       const todayParts = new Intl.DateTimeFormat('en-CA', {
         timeZone: MY, year: 'numeric', month: '2-digit', day: '2-digit',
-      }).format(new Date());                             // "YYYY-MM-DD"
+      }).format(new Date());
 
       const startDay = new Date(`${startParts}T00:00:00+08:00`);
       const todayDay = new Date(`${todayParts}T00:00:00+08:00`);
@@ -270,13 +282,15 @@ export default function BookingRequestPlaceholder() {
     }
   };
 
-  if (loading) {
+  // 1. Show a loading spinner if the data is still fetching
+  // OR if the role hasn't been set yet (null)
+  // OR if the user is a club rep (we are about to redirect them)
+  if (loading || role === null || role === 'club_representative') {
     return (
       <div className="min-h-screen bg-[#F6F4F5] font-inter text-[#1F1A1C]">
-        <TopNavbar role={role} onProfileOpen={setIsProfileOpen} />
-        <main className="mx-auto max-w-[1280px] px-5 py-7 sm:px-[60px]">
-          <button type="button" onClick={() => navigate(-1)} className="mb-5 inline-flex items-center gap-1 text-sm font-medium text-[#6B6468] hover:text-[#7A1F3D]"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg> Back</button>
-          <p className="mt-10 text-[#6B6468]">Loading booking form...</p>
+        <TopNavbar role={role || 'student'} onProfileOpen={setIsProfileOpen} />
+        <main className="mx-auto max-w-[1280px] px-5 py-7 sm:px-[60px] flex justify-center items-center h-[70vh]">
+          <div className="w-12 h-12 border-4 border-[#7A1F3D] border-t-transparent rounded-full animate-spin"></div>
         </main>
         <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
       </div>
