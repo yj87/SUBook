@@ -35,6 +35,46 @@ const ACTIVE_BOOKING_STATUSES = [
   'approved_awaiting_payment',
 ];
 
+// GET /api/bookings/calendar
+// Return every visible booking intersecting the requested Malaysia-time week.
+router.get('/calendar', requireMPPAdmin, async (req, res) => {
+  const { start, end } = req.query;
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+
+  if (!start || !end || !Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || startDate >= endDate) {
+    return res.status(400).json({ success: false, error: 'Valid start and end dates are required' });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select(`
+        booking_id,
+        event_name,
+        purpose,
+        booking_type,
+        start_time,
+        end_time,
+        date,
+        status,
+        venue_id,
+        venues (venue_name)
+      `)
+      .lt('start_time', endDate.toISOString())
+      .gt('end_time', startDate.toISOString())
+      .in('status', ACTIVE_BOOKING_STATUSES)
+      .order('start_time', { ascending: true });
+
+    if (error) throw error;
+
+    return res.status(200).json({ success: true, bookings: data || [] });
+  } catch (error) {
+    console.error('Calendar bookings error:', error);
+    return res.status(500).json({ success: false, error: 'Unable to retrieve calendar bookings' });
+  }
+});
+
 const MAX_DAILY_DAYS = 7;
 
 // Bookings must start 3 days after today.
