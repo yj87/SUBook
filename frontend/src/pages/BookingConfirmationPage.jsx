@@ -34,6 +34,13 @@ export default function BookingConfirmationPage() {
   const [copied, setCopied] = useState(false);
   const [role, setRole] = useState('student');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const dashboardPath =
+    role === 'club_representative' ? '/club-dashboard'
+    : role === 'mpp_admin' ? '/mpp-dashboard'
+    : '/student-dashboard';
+
+  const faqPath =
+    role === 'club_representative' ? '/club-faq' : '/student-faq';
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +72,7 @@ export default function BookingConfirmationPage() {
           .from('bookings')
           .select(`
             booking_id,
+            booking_ref,
             venue_id,
             booking_type,
             purpose,
@@ -103,9 +111,9 @@ export default function BookingConfirmationPage() {
   }, [bookingId]);
 
   const copyReference = async () => {
-    if (!bookingId) return;
+    if (!booking?.booking_ref) return;
     try {
-      await navigator.clipboard.writeText(bookingId);
+      await navigator.clipboard.writeText(booking.booking_ref);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -201,6 +209,20 @@ export default function BookingConfirmationPage() {
             <h2 className="text-base font-bold text-[#1F1A1C]">Booking Summary</h2>
 
             <dl className="mt-4 space-y-3 text-[13px]">
+                <div className="flex items-start justify-between gap-3">
+                <dt className="text-[#6B6468]">Booking reference</dt>
+                <dd className="flex items-center gap-2 text-right font-mono font-semibold text-[#1F1A1C]">
+                  <span>{booking.booking_ref || '—'}</span>
+                  <button
+                    type="button"
+                    onClick={copyReference}
+                    className="text-[#7A1F3D] hover:underline cursor-pointer"
+                    title="Copy booking reference"
+                  >
+                    {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                </dd>
+              </div>
               <div className="flex items-start justify-between gap-3">
                 <dt className="text-[#6B6468]">Venue</dt>
                 <dd className="text-right font-semibold text-[#1F1A1C]">
@@ -292,7 +314,7 @@ export default function BookingConfirmationPage() {
               Book another venue
             </Link>
             <Link
-              to="/student-dashboard"
+              to={dashboardPath}
               className="rounded-lg bg-[#7A1F3D] px-5 py-3 text-[13px] font-semibold text-white hover:bg-[#651830]"
             >
               Back to Dashboard
@@ -301,7 +323,7 @@ export default function BookingConfirmationPage() {
 
           <p className="mt-8 text-center text-xs text-[#6B6468]">
             Need help? Check the{' '}
-            <Link to="/student-faq" className="font-semibold text-[#7A1F3D] hover:underline">
+            <Link to={faqPath} className="font-semibold text-[#7A1F3D] hover:underline">
               FAQ
             </Link>{' '}
             or contact MPP.
