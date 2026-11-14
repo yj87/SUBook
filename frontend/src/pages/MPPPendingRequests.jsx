@@ -187,40 +187,35 @@ export default function MPPPendingRequests() {
 
   // ── Reject ────────────────────────────────────────────────────────
   const handleReject = async () => {
-    const trimmed = rejectReason.trim();
-    if (trimmed.length < 10) {
-      setRejectError('Please enter at least 10 characters explaining the reason.');
-      return;
-    }
-    setRejectError('');
-    setIsProcessing(true);
-    try {
-      const { error } = await supabase
-        .from('bookings')
-        .update({ status: REJECTED, rejection_reason: trimmed })
-        .eq('booking_id', selectedRequest.booking_id);
+  const trimmed = rejectReason.trim();
+  if (trimmed.length < 10) {
+    setRejectError('Please enter at least 10 characters explaining the reason.');
+    return;
+  }
+  setRejectError('');
+  setIsProcessing(true);
+  try {
+    const { data, error } = await supabase.rpc('reject_booking', {
+      p_booking_id: selectedRequest.booking_id,
+      p_reason: trimmed,
+    });
+    if (error) throw error;
 
-      if (error) throw error;
-
-      await supabase.from('notifications').insert({
-        profile_id: selectedRequest.profiles.profile_id,
-        booking_id: selectedRequest.booking_id,
-        title: 'Booking Rejected',
-        message: `Your booking at ${selectedRequest.venues.venue_name} was rejected. Reason: ${trimmed}`,
-      });
-
-      const patch = { status: REJECTED, rejection_reason: trimmed };
-      setRequests(requests.map(r =>
-        r.booking_id === selectedRequest.booking_id ? { ...r, ...patch } : r));
-      setSelectedRequest({ ...selectedRequest, ...patch });
-      setShowRejectDialog(false);
-      setRejectReason('');
-    } catch (err) {
-      setRejectError(err.message);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+    const patch = {
+      status: REJECTED,
+      rejection_reason: data.rejection_reason ?? trimmed,
+    };
+    setRequests(requests.map(r =>
+      r.booking_id === selectedRequest.booking_id ? { ...r, ...patch } : r));
+    setSelectedRequest({ ...selectedRequest, ...patch });
+    setShowRejectDialog(false);
+    setRejectReason('');
+  } catch (err) {
+    setRejectError(err.message);
+  } finally {
+    setIsProcessing(false);
+  }
+};
 
   // ── Filter + sort ─────────────────────────────────────────────────
   const filteredAndSortedRequests = requests
