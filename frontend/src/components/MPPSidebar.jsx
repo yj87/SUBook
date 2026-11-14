@@ -64,6 +64,16 @@ export default function MPPSidebar({ isMobileMenuOpen, setIsMobileMenuOpen, setI
             >
               My Approval
             </button>
+
+            {/* ADDED ALL BOOKINGS HERE */}
+            <button 
+              onClick={() => navigate('/mpp-dashboard/bookings')} 
+              className={`text-left px-6 py-4 text-sm transition-colors cursor-pointer w-full ${
+                isActive('/mpp-dashboard/bookings') ? 'bg-[#5E1730] font-semibold' : 'hover:bg-[#5E1730]'
+              }`}
+            >
+              All Bookings
+            </button>
             
             <button className="text-left px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors cursor-pointer w-full">
               Calendar
