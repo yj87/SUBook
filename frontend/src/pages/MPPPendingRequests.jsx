@@ -69,6 +69,7 @@ export default function MPPPendingRequests() {
           .from('bookings')
           .select(`
             booking_id,
+            booking_ref,
             event_name,
             purpose,
             start_time,
@@ -342,9 +343,11 @@ export default function MPPPendingRequests() {
       const role = req.profiles?.role;
       if (filterUserType === 'Student' && role !== 'student') return false;
       if (filterUserType === 'Club'    && role !== 'club_representative') return false;
+      const q = searchQuery.toLowerCase();
       const matchesSearch =
-        (req.profiles?.full_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (req.event_name || '').toLowerCase().includes(searchQuery.toLowerCase());
+        (req.profiles?.full_name || '').toLowerCase().includes(q) ||
+        (req.event_name || '').toLowerCase().includes(q) ||
+        (req.booking_ref || '').toLowerCase().includes(q);
       const matchesVenue = filterVenue === 'All' || req.venues?.venue_name === filterVenue;
       return matchesSearch && matchesVenue;
     })
@@ -414,7 +417,7 @@ export default function MPPPendingRequests() {
               </h2>
 
               <div className="flex flex-col gap-3 mb-4">
-                <input type="text" placeholder="Search applicant or event..."
+                <input type="text" placeholder="Search ref, applicant, or event..."
                   value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full p-2 border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none" />
                 <div className="grid grid-cols-2 gap-2">
@@ -454,7 +457,7 @@ export default function MPPPendingRequests() {
                         }`}>
                         <div className="flex items-center justify-between gap-2">
                           <p className="font-semibold text-sm text-[#1F1A1C] truncate">
-                            {req.profiles?.full_name || 'Unknown User'}
+                              {req.booking_ref || 'Unknown Ref'}
                           </p>
                           {req.status !== PENDING && (
                             <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold
@@ -472,6 +475,7 @@ export default function MPPPendingRequests() {
                             </span>
                           )}
                         </div>
+                      
                         <p className="text-xs text-[#6B6468] truncate mt-1">
                           {req.venues?.venue_name} · {formatDate(req.start_time)}
                         </p>
@@ -497,7 +501,7 @@ export default function MPPPendingRequests() {
               <div className="rounded-xl border border-[#E3DEE0] bg-white p-6 md:p-8 w-full max-w-3xl">
                 <div className="mb-6">
                   <h2 className="text-xl font-bold text-[#1F1A1C]">
-                    {selectedRequest.profiles?.full_name} – {selectedRequest.venues?.venue_name}
+                    {selectedRequest.booking_ref} – {selectedRequest.venues?.venue_name}
                   </h2>
                   <div className="mt-1">
                     <span className="text-xs font-semibold text-[#6B6468] uppercase tracking-wider">
@@ -758,7 +762,8 @@ export default function MPPPendingRequests() {
             </div>
             <div className="p-5">
               <div className="mb-4 rounded-lg border border-[#E3DEE0] bg-[#FAF9FA] p-3">
-                <p className="text-sm font-semibold text-[#1F1A1C]">
+                <p className="text-[11px] font-mono text-[#6B6468]">Ref: {selectedRequest.booking_ref || '—'}</p>
+                <p className="text-sm font-semibold text-[#1F1A1C] mt-0.5">
                   {selectedRequest.profiles?.full_name} · {selectedRequest.venues?.venue_name}
                 </p>
                 <p className="mt-0.5 text-xs text-[#6B6468]">
