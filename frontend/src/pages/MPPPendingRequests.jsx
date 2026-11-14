@@ -25,6 +25,7 @@ const DEADLINE_FORMATTER = new Intl.DateTimeFormat('en-MY', {
 });
 
 export default function MPPPendingRequests() {
+  console.log('[RENDER] MPPPendingRequests mounted at', window.location.pathname);
   const [requests, setRequests] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -42,23 +43,26 @@ export default function MPPPendingRequests() {
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectError, setRejectError] = useState('');
 
-  // OCR
+  // OCR — fresh run only. Saved values are read from the DB row (ocr_verifications[0]).
   const [ocrData, setOcrData] = useState(null);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState('');
 
-  // Verification (one row per booking, upserted)
+  // Verification form (transient edits)
   const [decision, setDecision] = useState('');
   const [remarks, setRemarks] = useState('');
   const [savingVerification, setSavingVerification] = useState(false);
   const [verificationError, setVerificationError] = useState('');
 
-  // MPP overrides
-  const [reviewFields, setReviewFields] = useState({
-    clubName: '', eventName: '', eventDate: '', eventTime: '',
-    venue: '', attendees: '', signatory: '',
-  });
-  const [reviewInitialized, setReviewInitialized] = useState(false);
+  // MPP overrides — keyed to the current selection
+  const [reviewFields, setReviewFields] = useState({});
+    // Normalize so callers always get a single verification row (or null).
+  const getVerification = (req) => {
+    if (!req?.ocr_verifications) return null;
+    return Array.isArray(req.ocr_verifications)
+      ? (req.ocr_verifications[0] ?? null)
+      : req.ocr_verifications;
+  };
 
   // ── Fetch ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -109,20 +113,18 @@ export default function MPPPendingRequests() {
     return () => { cancelled = true; };
   }, []);
 
-  // Hydrate radios/remarks from existing verification when selection changes
+  // Reset transient UI when the selected booking changes.
+  // Saved values are NOT stored in state — they are read from the row at render time.
   useEffect(() => {
-    setReviewInitialized(false);
     setOcrData(null);
     setOcrError('');
     setOcrLoading(false);
     setVerificationError('');
-    const v = selectedRequest?.ocr_verifications?.[0];
+
+    const v = getVerification(selectedRequest);
     setDecision(v?.status || '');
     setRemarks(v?.remarks || '');
-    setReviewFields({
-      clubName: '', eventName: '', eventDate: '', eventTime: '',
-      venue: '', attendees: '', signatory: '',
-    });
+    setReviewFields({});
   }, [selectedRequest?.booking_id]);
 
   // ── Formatters ────────────────────────────────────────────────────
@@ -148,13 +150,40 @@ export default function MPPPendingRequests() {
     return `${formatTime(req.start_time)} – ${formatTime(req.end_time)}`;
   };
 
+  // ── Derived values from the DB row ────────────────────────────────
+  const savedVerification = getVerification(selectedRequest);
+  const verificationStatus = savedVerification?.status;
+
+  // "effective" OCR = a fresh scan if one was run, otherwise the saved extracted payload
+  const effectiveOcr = ocrData || savedVerification?.extracted || null;
+
+  const eq = (a, b) =>
+    String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+
+  const buildComparison = () => {
+    if (!effectiveOcr) return [];
+    const submittedVenue = selectedRequest?.venues?.venue_name;
+    const submittedDate  = selectedRequest?.start_time?.split('T')[0];
+    const submittedTime  = getSubmittedTime();
+    const submittedClub  = selectedRequest?.profiles?.full_name;
+
+    return [
+      { key:'clubName',  label:'Club name', submitted:submittedClub,               ocr:effectiveOcr.clubName,  match:eq(effectiveOcr.clubName,  submittedClub) },
+      { key:'eventName', label:'Event name',submitted:selectedRequest?.event_name, ocr:effectiveOcr.eventName, match:eq(effectiveOcr.eventName, selectedRequest?.event_name) },
+      { key:'eventDate', label:'Event date',submitted:submittedDate,               ocr:effectiveOcr.eventDate, match:eq(effectiveOcr.eventDate, submittedDate) },
+      { key:'eventTime', label:'Time',      submitted:submittedTime,               ocr:effectiveOcr.eventTime, match:eq(effectiveOcr.eventTime, submittedTime) },
+      { key:'venue',     label:'Venue',     submitted:submittedVenue,              ocr:effectiveOcr.venue,     match:eq(effectiveOcr.venue,     submittedVenue) },
+      { key:'attendees', label:'Attendees', submitted:selectedRequest?.expected_attendees, ocr:effectiveOcr.attendees, match:Number(effectiveOcr.attendees) === Number(selectedRequest?.expected_attendees) },
+      { key:'signatory', label:'Signatory', submitted:'—',                         ocr:effectiveOcr.signatory, match:!!effectiveOcr.signatory },
+    ];
+  };
+
   // ── OCR ───────────────────────────────────────────────────────────
   const handleExtractOcr = async () => {
     if (!selectedRequest?.approval_letter_url) return;
     setOcrLoading(true);
     setOcrError('');
     setOcrData(null);
-    setReviewInitialized(false);
     setDecision('');
     setVerificationError('');
 
@@ -177,7 +206,6 @@ export default function MPPPendingRequests() {
         setOcrError('OCR could not read any fields. You can still mark the document as Unreadable.');
         setDecision(VERIFY_UNREADABLE);
       } else {
-        const eq = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
         const submittedClub  = selectedRequest?.profiles?.full_name;
         const submittedDate  = selectedRequest?.start_time?.split('T')[0];
         const submittedTime  = getSubmittedTime();
@@ -191,17 +219,6 @@ export default function MPPPendingRequests() {
           Number(extracted.attendees) !== Number(selectedRequest?.expected_attendees);
         setDecision(anyMismatch ? VERIFY_MISMATCH : VERIFY_MATCHED);
       }
-
-      setReviewFields({
-        clubName:   extracted.clubName   || selectedRequest.profiles?.full_name || '',
-        eventName:  extracted.eventName  || selectedRequest.event_name || '',
-        eventDate:  extracted.eventDate  || selectedRequest.start_time?.split('T')[0] || '',
-        eventTime:  extracted.eventTime  || getSubmittedTime(),
-        venue:      extracted.venue      || selectedRequest.venues?.venue_name || '',
-        attendees:  extracted.attendees != null ? String(extracted.attendees) : String(selectedRequest.expected_attendees ?? ''),
-        signatory:  extracted.signatory  || '',
-      });
-      setReviewInitialized(true);
     } catch (err) {
       setOcrError(err.message);
     } finally {
@@ -238,7 +255,7 @@ export default function MPPPendingRequests() {
         verified_by: user.id,
         status,
         remarks: remarks.trim() || null,
-        extracted: ocrData || null,
+        extracted: effectiveOcr || null,
         mismatches: mismatchRows,
         updated_at: new Date().toISOString(),
       };
@@ -253,11 +270,12 @@ export default function MPPPendingRequests() {
         .single();
       if (upErr) throw upErr;
 
-      setSelectedRequest(prev => ({ ...prev, ocr_verifications: [saved] }));
+      setSelectedRequest(prev => prev ? { ...prev, ocr_verifications: [saved] } : prev);
       setRequests(prev => prev.map(r =>
         r.booking_id === selectedRequest.booking_id
           ? { ...r, ocr_verifications: [saved] }
           : r));
+      setOcrData(null);
     } catch (err) {
       setVerificationError(err.message);
     } finally {
@@ -267,7 +285,7 @@ export default function MPPPendingRequests() {
 
   // ── Approve / Reject ──────────────────────────────────────────────
   const handleApprove = async () => {
-    if (BLOCK_APPROVE_WITHOUT_VERIFICATION && !(selectedRequest?.ocr_verifications?.length)) {
+    if (BLOCK_APPROVE_WITHOUT_VERIFICATION && !getVerification(selectedRequest)) {
       alert('Please save an OCR verification before approving.');
       return;
     }
@@ -315,27 +333,8 @@ export default function MPPPendingRequests() {
     }
   };
 
-  // ── Comparison ───────────────────────────────────────────────────
-  const buildComparison = () => {
-    if (!ocrData) return [];
-    const eq = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
-    const submittedVenue = selectedRequest?.venues?.venue_name;
-    const submittedDate  = selectedRequest?.start_time?.split('T')[0];
-    const submittedTime  = getSubmittedTime();
-    const submittedClub  = selectedRequest?.profiles?.full_name;
-
-    return [
-      { key:'clubName',  label:'Club name', submitted:submittedClub,            ocr:ocrData.clubName,  match:eq(ocrData.clubName,  submittedClub) },
-      { key:'eventName', label:'Event name',submitted:selectedRequest?.event_name, ocr:ocrData.eventName, match:eq(ocrData.eventName, selectedRequest?.event_name) },
-      { key:'eventDate', label:'Event date',submitted:submittedDate,             ocr:ocrData.eventDate, match:eq(ocrData.eventDate, submittedDate) },
-      { key:'eventTime', label:'Time',      submitted:submittedTime,             ocr:ocrData.eventTime, match:eq(ocrData.eventTime, submittedTime) },
-      { key:'venue',     label:'Venue',     submitted:submittedVenue,            ocr:ocrData.venue,     match:eq(ocrData.venue,     submittedVenue) },
-      { key:'attendees', label:'Attendees', submitted:selectedRequest?.expected_attendees, ocr:ocrData.attendees, match:Number(ocrData.attendees) === Number(selectedRequest?.expected_attendees) },
-      { key:'signatory', label:'Signatory', submitted:'—',                       ocr:ocrData.signatory, match:!!ocrData.signatory },
-    ];
-  };
-
-  const handleReviewChange = (key, value) => setReviewFields(prev => ({ ...prev, [key]: value }));
+  const handleReviewChange = (key, value) =>
+    setReviewFields(prev => ({ ...prev, [key]: value }));
 
   // ── Filters ───────────────────────────────────────────────────────
   const filteredAndSortedRequests = requests
@@ -363,11 +362,8 @@ export default function MPPPendingRequests() {
   const totalAmount =
     Number(selectedRequest?.quoted_rate || 0) + Number(selectedRequest?.quoted_deposit || 0);
 
-  const verification = selectedRequest?.ocr_verifications?.[0];
-  const verificationStatus = verification?.status;
-
   const suggestedStatus = (() => {
-    if (!ocrData) return '';
+    if (!effectiveOcr) return '';
     const fields = buildComparison();
     return fields.some(f => !f.match) ? VERIFY_MISMATCH : VERIFY_MATCHED;
   })();
@@ -446,7 +442,7 @@ export default function MPPPendingRequests() {
                   <p className="text-xs text-[#6B6468] italic text-center py-4">No matching requests found.</p>
                 ) : (
                   filteredAndSortedRequests.map((req) => {
-                    const v = req.ocr_verifications?.[0];
+                    const v = getVerification(req);
                     return (
                       <button key={req.booking_id}
                         onClick={() => { setSelectedRequest(req); setRejectReason(''); setRejectError(''); }}
@@ -525,7 +521,8 @@ export default function MPPPendingRequests() {
                     {selectedRequest.status === EXPIRED          && 'Expired'}
                   </div>
 
-                  {verificationStatus && (
+                  {/* OCR label — ONLY when a verification exists in the DB */}
+                  {savedVerification && (
                     <div className="mt-2 text-xs">
                       <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold ${
                         verificationStatus === 'matched'    ? 'bg-[#CDEFD6] text-[#17703A]' :
@@ -535,11 +532,11 @@ export default function MPPPendingRequests() {
                       }`}>
                         OCR: {verificationStatus}
                       </span>
-                      {verification?.verifier?.full_name && (
-                        <span className="ml-2 text-[#6B6468]">by {verification.verifier.full_name}</span>
+                      {savedVerification.verifier?.full_name && (
+                        <span className="ml-2 text-[#6B6468]">by {savedVerification.verifier.full_name}</span>
                       )}
-                      {verification?.updated_at && (
-                        <span className="ml-2 text-[#6B6468]">· {formatDateTime(verification.updated_at)}</span>
+                      {savedVerification.updated_at && (
+                        <span className="ml-2 text-[#6B6468]">· {formatDateTime(savedVerification.updated_at)}</span>
                       )}
                     </div>
                   )}
@@ -575,7 +572,7 @@ export default function MPPPendingRequests() {
                           className="inline-flex items-center gap-1.5 rounded-lg bg-[#7A1F3D] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#651830] disabled:opacity-50 cursor-pointer">
                           {ocrLoading ? (
                             <><span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span> Extracting…</>
-                          ) : (<>🤖 {ocrData ? 'Re-extract with AI' : 'Extract with AI'}</>)}
+                          ) : (<>🤖 {effectiveOcr ? 'Re-extract with AI' : 'Extract with AI'}</>)}
                         </button>
                       </div>
 
@@ -583,8 +580,8 @@ export default function MPPPendingRequests() {
                         <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{ocrError}</p>
                       )}
 
-                      {/* Comparison table */}
-                      {ocrData && reviewInitialized && decision !== VERIFY_UNREADABLE && (() => {
+                      {/* Comparison table — only when there's OCR data (fresh or saved) */}
+                      {effectiveOcr && decision !== VERIFY_UNREADABLE && (() => {
                         const fields = buildComparison();
                         const mismatches = fields.filter(f => !f.match).length;
                         return (
@@ -608,7 +605,9 @@ export default function MPPPendingRequests() {
                                   <span className="font-medium text-[#6B6468]">{f.label}</span>
                                   <span className="text-[#1F1A1C] truncate min-w-0" title={String(f.submitted)}>{String(f.submitted ?? '—')}</span>
                                   <span className="text-[#1F1A1C] truncate min-w-0" title={String(f.ocr)}>{String(f.ocr ?? '—')}</span>
-                                  <input type="text" value={reviewFields[f.key] ?? ''} onChange={(e) => handleReviewChange(f.key, e.target.value)}
+                                  <input type="text"
+                                    value={reviewFields[f.key] ?? (f.ocr ?? '')}
+                                    onChange={(e) => handleReviewChange(f.key, e.target.value)}
                                     className="w-full rounded border border-[#E3DEE0] bg-white px-2 py-1 text-[13px] outline-none focus:border-[#7A1F3D]" />
                                   <span className={`text-center ${f.match ? 'text-[#17703A]' : 'text-[#D97706]'}`}>{f.match ? '✔' : '⚠'}</span>
                                 </div>
@@ -621,72 +620,74 @@ export default function MPPPendingRequests() {
                         );
                       })()}
 
-                      {/* Inline verification — radios + remarks + Save */}
-                      <div className="rounded-xl border border-[#E3DEE0] bg-white p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-bold text-[#1F1A1C]">Mark verification</h4>
-                          {verificationStatus && (
-                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                              verificationStatus === 'matched'    ? 'bg-[#CDEFD6] text-[#17703A]' :
-                              verificationStatus === 'mismatch'   ? 'bg-[#FFF3CD] text-[#8A6D00]' :
-                              verificationStatus === 'unreadable' ? 'bg-[#FFCDCD] text-[#A12632]' :
-                                                                    'bg-[#EDEDED] text-[#6B6468]'
-                            }`}>
-                              Saved: {verificationStatus}
-                            </span>
-                          )}
-                        </div>
-
-                        <div>
-                          <p className="text-xs font-semibold text-[#6B6468] mb-2">
-                            Mark as
-                            {suggestedStatus && (
-                              <span className="ml-1 font-normal text-[#6B6468]">
-                                (system suggests: <strong className="text-[#1F1A1C]">{suggestedStatus}</strong>)
+                      {/* Inline verification — only when there's OCR data (fresh or saved) */}
+                      {effectiveOcr && (
+                        <div className="rounded-xl border border-[#E3DEE0] bg-white p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-bold text-[#1F1A1C]">Mark verification</h4>
+                            {verificationStatus && (
+                              <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                verificationStatus === 'matched'    ? 'bg-[#CDEFD6] text-[#17703A]' :
+                                verificationStatus === 'mismatch'   ? 'bg-[#FFF3CD] text-[#8A6D00]' :
+                                verificationStatus === 'unreadable' ? 'bg-[#FFCDCD] text-[#A12632]' :
+                                                                      'bg-[#EDEDED] text-[#6B6468]'
+                              }`}>
+                                Saved: {verificationStatus}
                               </span>
                             )}
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {decisionOptions.map(opt => (
-                              <label key={opt.value}
-                                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold cursor-pointer transition-colors ${
-                                  decision === opt.value
-                                    ? opt.activeCls
-                                    : 'border-[#E3DEE0] bg-white text-[#1F1A1C] hover:bg-[#FAF8F9]'
-                                }`}>
-                                <input type="radio" name="verify-decision" value={opt.value}
-                                  checked={decision === opt.value}
-                                  onChange={() => { setDecision(opt.value); if (verificationError) setVerificationError(''); }}
-                                  className="cursor-pointer" />
-                                {opt.label}
-                              </label>
-                            ))}
                           </div>
-                        </div>
 
-                        <div>
-                          <label htmlFor="verify-remarks" className="block text-xs font-semibold text-[#6B6468] mb-1">
-                            Remarks for mismatched / unclear information
-                            {(decision === VERIFY_MISMATCH || decision === VERIFY_UNREADABLE) && <span className="text-[#A12632]"> *</span>}
-                          </label>
-                          <textarea id="verify-remarks" rows={3} value={remarks}
-                            onChange={(e) => { setRemarks(e.target.value.slice(0, 1000)); if (verificationError) setVerificationError(''); }}
-                            placeholder="e.g. Letter states 120 attendees but booking is 100. Venue matches. Signatory unclear."
-                            className="w-full resize-none rounded-lg border border-[#E3DEE0] px-3 py-2 text-sm outline-none focus:border-[#7A1F3D]" />
-                          <div className="flex justify-between text-[11px] text-[#6B6468] mt-1">
-                            <span className={verificationError ? 'text-[#A12632]' : ''}>
-                              {verificationError || ((decision === VERIFY_MISMATCH || decision === VERIFY_UNREADABLE) ? 'Required (min 10 characters)' : 'Optional')}
-                            </span>
-                            <span>{remarks.length} / 1000</span>
+                          <div>
+                            <p className="text-xs font-semibold text-[#6B6468] mb-2">
+                              Mark as
+                              {suggestedStatus && (
+                                <span className="ml-1 font-normal text-[#6B6468]">
+                                  (system suggests: <strong className="text-[#1F1A1C]">{suggestedStatus}</strong>)
+                                </span>
+                              )}
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {decisionOptions.map(opt => (
+                                <label key={opt.value}
+                                  className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold cursor-pointer transition-colors ${
+                                    decision === opt.value
+                                      ? opt.activeCls
+                                      : 'border-[#E3DEE0] bg-white text-[#1F1A1C] hover:bg-[#FAF8F9]'
+                                  }`}>
+                                  <input type="radio" name="verify-decision" value={opt.value}
+                                    checked={decision === opt.value}
+                                    onChange={() => { setDecision(opt.value); if (verificationError) setVerificationError(''); }}
+                                    className="cursor-pointer" />
+                                  {opt.label}
+                                </label>
+                              ))}
+                            </div>
                           </div>
-                        </div>
 
-                        <button onClick={handleSaveVerification}
-                          disabled={savingVerification || !decision}
-                          className="rounded-lg bg-[#7A1F3D] px-4 py-2 text-xs font-semibold text-white hover:bg-[#651830] disabled:opacity-50 cursor-pointer">
-                          {savingVerification ? 'Saving…' : 'Save verification'}
-                        </button>
-                      </div>
+                          <div>
+                            <label htmlFor="verify-remarks" className="block text-xs font-semibold text-[#6B6468] mb-1">
+                              Remarks for mismatched / unclear information
+                              {(decision === VERIFY_MISMATCH || decision === VERIFY_UNREADABLE) && <span className="text-[#A12632]"> *</span>}
+                            </label>
+                            <textarea id="verify-remarks" rows={3} value={remarks}
+                              onChange={(e) => { setRemarks(e.target.value.slice(0, 1000)); if (verificationError) setVerificationError(''); }}
+                              placeholder="e.g. Letter states 120 attendees but booking is 100. Venue matches. Signatory unclear."
+                              className="w-full resize-none rounded-lg border border-[#E3DEE0] px-3 py-2 text-sm outline-none focus:border-[#7A1F3D]" />
+                            <div className="flex justify-between text-[11px] text-[#6B6468] mt-1">
+                              <span className={verificationError ? 'text-[#A12632]' : ''}>
+                                {verificationError || ((decision === VERIFY_MISMATCH || decision === VERIFY_UNREADABLE) ? 'Required (min 10 characters)' : 'Optional')}
+                              </span>
+                              <span>{remarks.length} / 1000</span>
+                            </div>
+                          </div>
+
+                          <button onClick={handleSaveVerification}
+                            disabled={savingVerification || !decision}
+                            className="rounded-lg bg-[#7A1F3D] px-4 py-2 text-xs font-semibold text-white hover:bg-[#651830] disabled:opacity-50 cursor-pointer">
+                            {savingVerification ? 'Saving…' : 'Save verification'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <p className="text-[#6B6468] italic">Not Applicable (No document needed for shared venues)</p>
@@ -703,7 +704,7 @@ export default function MPPPendingRequests() {
                       </button>
                       <button
                         onClick={() => {
-                          const latestRemarks = selectedRequest.ocr_verifications?.[0]?.remarks;
+                          const latestRemarks = getVerification(selectedRequest)?.remarks;
                           setRejectReason(latestRemarks || '');
                           setRejectError('');
                           setShowRejectDialog(true);
