@@ -36,10 +36,27 @@ const ACTIVE_BOOKING_STATUSES = [
   'approved_awaiting_payment',
 ];
 
+const CALENDAR_BOOKING_STATUSES = ['confirmed'];
+
+const BOOKING_SELECT = `
+  booking_id,
+  booking_ref,
+  event_name,
+  purpose,
+  booking_type,
+  start_time,
+  end_time,
+  date,
+  status,
+  venue_id,
+  venues (venue_name),
+  profiles!bookings_profile_id_fkey (full_name, matric_no, role)
+`;
+
 // GET /api/bookings/calendar
 // Return every visible booking intersecting the requested Malaysia-time week.
 router.get('/calendar', requireMPPAdmin, async (req, res) => {
-  const { start, end } = req.query;
+  const { start, end, venue_id: venueId } = req.query;
   const startDate = new Date(start);
   const endDate = new Date(end);
 
@@ -48,25 +65,15 @@ router.get('/calendar', requireMPPAdmin, async (req, res) => {
   }
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('bookings')
-      .select(`
-        booking_id,
-        booking_ref,
-        event_name,
-        purpose,
-        booking_type,
-        start_time,
-        end_time,
-        date,
-        status,
-        venue_id,
-        venues (venue_name)
-      `)
+      .select(BOOKING_SELECT)
       .lt('start_time', endDate.toISOString())
       .gt('end_time', startDate.toISOString())
-      .in('status', ACTIVE_BOOKING_STATUSES)
-      .order('start_time', { ascending: true });
+      .gt('end_time', new Date().toISOString())
+      .in('status', CALENDAR_BOOKING_STATUSES);
+    if (venueId) query = query.eq('venue_id', venueId);
+    const { data, error } = await query.order('start_time', { ascending: true });
 
     if (error) throw error;
 
@@ -74,6 +81,35 @@ router.get('/calendar', requireMPPAdmin, async (req, res) => {
   } catch (error) {
     console.error('Calendar bookings error:', error);
     return res.status(500).json({ success: false, error: 'Unable to retrieve calendar bookings' });
+  }
+});
+
+// GET /api/bookings/management
+// Return all booking lifecycle records for the MPP management list.
+router.get('/management', requireMPPAdmin, async (req, res) => {
+  const { scope = 'active', search = '', venue_id: venueId, confirmed_only: confirmedOnly } = req.query;
+  if (!['active', 'past'].includes(scope)) {
+    return res.status(400).json({ success: false, error: 'scope must be active or past' });
+  }
+
+  try {
+    let query = supabase
+      .from('bookings')
+      .select(BOOKING_SELECT)
+      .order('start_time', { ascending: scope === 'past' });
+
+    if (scope === 'active') query = query.gt('end_time', new Date().toISOString());
+    else query = query.lte('end_time', new Date().toISOString());
+    if (confirmedOnly === 'true') query = query.eq('status', 'confirmed');
+    if (venueId) query = query.eq('venue_id', venueId);
+    if (search.trim()) query = query.ilike('booking_ref', `%${search.trim()}%`);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return res.status(200).json({ success: true, bookings: data || [] });
+  } catch (error) {
+    console.error('Booking management error:', error);
+    return res.status(500).json({ success: false, error: 'Unable to retrieve bookings' });
   }
 });
 

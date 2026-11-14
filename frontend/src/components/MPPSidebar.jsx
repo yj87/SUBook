@@ -32,7 +32,7 @@ export default function MPPSidebar({ isMobileMenuOpen, setIsMobileMenuOpen, setI
       )}
 
       <aside className={`
-        fixed md:static inset-y-0 left-0 z-50 w-[220px] bg-[#7A1F3D] text-white flex flex-col justify-between shrink-0 h-full transition-transform duration-300
+        fixed md:sticky md:top-0 inset-y-0 left-0 z-50 w-[220px] bg-[#7A1F3D] text-white flex min-h-screen h-screen flex-col justify-between shrink-0 transition-transform duration-300
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         <div>
@@ -65,7 +65,9 @@ export default function MPPSidebar({ isMobileMenuOpen, setIsMobileMenuOpen, setI
               My Approval
             </button>
             
-            <button className="text-left px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors cursor-pointer w-full">
+            <button onClick={() => navigate('/mpp-dashboard/calendar')} className={`text-left px-6 py-4 text-sm transition-colors cursor-pointer w-full ${
+              isActive('/mpp-dashboard/calendar') ? 'bg-[#5E1730] font-semibold' : 'hover:bg-[#5E1730]'
+            }`}>
               Calendar
             </button>
             <button className="text-left px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors cursor-pointer w-full">
