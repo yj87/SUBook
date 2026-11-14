@@ -49,7 +49,10 @@ const BOOKING_SELECT = `
   date,
   status,
   venue_id,
-  venues (venue_name),
+  venues (venue_name)
+`;
+
+const MANAGEMENT_BOOKING_SELECT = `${BOOKING_SELECT},
   profiles!bookings_profile_id_fkey (full_name, matric_no, role)
 `;
 
@@ -65,21 +68,49 @@ router.get('/calendar', requireMPPAdmin, async (req, res) => {
   }
 
   try {
+    const requestedStart = startDate.toISOString();
+    const requestedEnd = endDate.toISOString();
+
+    // Fetch the full date-overlap set first. Status filtering is kept here so
+    // diagnostics can distinguish an empty Supabase result from bookings that
+    // were intentionally excluded because they are not confirmed.
     let query = supabase
       .from('bookings')
       .select(BOOKING_SELECT)
-      .lt('start_time', endDate.toISOString())
-      .gt('end_time', startDate.toISOString())
-      .gt('end_time', new Date().toISOString())
-      .in('status', CALENDAR_BOOKING_STATUSES);
+      .lt('start_time', requestedEnd)
+      .gt('end_time', requestedStart);
     if (venueId) query = query.eq('venue_id', venueId);
     const { data, error } = await query.order('start_time', { ascending: true });
 
-    if (error) throw error;
+    if (error) {
+      console.error('[Calendar Debug]', {
+        'Requested Start': requestedStart,
+        'Requested End': requestedEnd,
+        'Supabase Query Error': { message: error.message, code: error.code || null },
+        'Raw Record Count': 0,
+        'Filtered Record Count': 0,
+        'Returned Booking Count': 0,
+      });
+      throw error;
+    }
 
-    return res.status(200).json({ success: true, bookings: data || [] });
+    const rawBookings = data || [];
+    const bookings = rawBookings.filter((booking) =>
+      CALENDAR_BOOKING_STATUSES.includes(String(booking.status || '').trim().toLowerCase())
+    );
+
+    console.info('[Calendar Debug]', {
+      'Requested Start': requestedStart,
+      'Requested End': requestedEnd,
+      'Supabase Query Error': null,
+      'Raw Record Count': rawBookings.length,
+      'Filtered Record Count': bookings.length,
+      'Returned Booking Count': bookings.length,
+    });
+
+    return res.status(200).json({ success: true, bookings });
   } catch (error) {
-    console.error('Calendar bookings error:', error);
+    console.error('Calendar bookings error:', error.message || error);
     return res.status(500).json({ success: false, error: 'Unable to retrieve calendar bookings' });
   }
 });
@@ -95,7 +126,7 @@ router.get('/management', requireMPPAdmin, async (req, res) => {
   try {
     let query = supabase
       .from('bookings')
-      .select(BOOKING_SELECT)
+      .select(MANAGEMENT_BOOKING_SELECT)
       .order('start_time', { ascending: scope === 'past' });
 
     if (scope === 'active') query = query.gt('end_time', new Date().toISOString());
