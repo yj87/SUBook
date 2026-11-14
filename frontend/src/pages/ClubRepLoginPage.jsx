@@ -34,7 +34,7 @@ export default function ClubRepLoginPage() {
           <Link to="/login" className="text-[#7A1F3D] font-inter text-2xl font-bold w-fit hover:opacity-80 transition-opacity">
   SUBook
 </Link>
-          <p className="text-[#7A1F3D] font-inter text-[13px] w-fit hidden sm:block">
+          <p className="text-[#6B6468] font-inter text-[13px] w-fit hidden sm:block">
             Venue booking &amp; campus events
           </p>
         </div>
@@ -76,7 +76,7 @@ export default function ClubRepLoginPage() {
             <p className="text-[#1F1A1C] font-inter text-[32px] sm:text-[42px] font-bold leading-[1.12em] w-full">
               Book on behalf of your club.
             </p>
-            <p className="text-[#7A1F3D] font-inter text-base leading-[1.65em] w-full max-w-[405px]">
+            <p className="text-[#6B6468] font-inter text-base leading-[1.65em] w-full max-w-[405px]">
               Reserve venues for club events, track approvals, and manage your
               club's bookings in one place.
             </p>
@@ -107,7 +107,7 @@ export default function ClubRepLoginPage() {
                   </clipPath>
                 </defs>
               </svg>
-              <p className="text-[#7A1F3D] font-inter text-[13px] font-medium w-fit">
+              <p className="text-[#6B6468] font-inter text-[13px] font-medium w-fit">
                 For registered clubs
               </p>
             </div>
@@ -134,7 +134,7 @@ export default function ClubRepLoginPage() {
                   </clipPath>
                 </defs>
               </svg>
-              <p className="text-[#7A1F3D] font-inter text-[13px] font-medium w-fit">
+              <p className="text-[#6B6468] font-inter text-[13px] font-medium w-fit">
                 Event scheduling
               </p>
             </div>
@@ -146,7 +146,7 @@ export default function ClubRepLoginPage() {
             <p className="text-[#1F1A1C] font-inter text-3xl font-bold w-full">
               Welcome to SUBook
             </p>
-            <p className="text-[#7A1F3D] font-inter text-sm leading-[1.6em] w-full">
+            <p className="text-[#6B6468] font-inter text-sm leading-[1.6em] w-full">
               Sign in with your club representative account to continue.
             </p>
           </div>
@@ -190,7 +190,7 @@ export default function ClubRepLoginPage() {
                 />
               </svg>
             </button>
-            <p className="text-[#7A1F3D] font-inter text-xs leading-[1.6em] w-full text-center">
+            <p className="text-[#6B6468] font-inter text-xs leading-[1.6em] w-full text-center">
               You'll be redirected to your university's secure sign-in page.
             </p>
           </div>
@@ -216,7 +216,7 @@ export default function ClubRepLoginPage() {
                     d="M4.08333 5.83324V4.0831C4.08333 3.30949 4.39062 2.56756 4.93761 2.02054C5.48459 1.47351 6.22645 1.1662 7 1.1662C7.77355 1.1662 8.51541 1.47351 9.06239 2.02054C9.60938 2.56756 9.91667 3.30949 9.91667 4.0831V5.83324M4.08333 5.83324H2.91667C2.27233 5.83324 1.75 6.35562 1.75 7V11.667C1.75 12.3114 2.27233 12.8338 2.91667 12.8338H11.0833C11.7277 12.8338 12.25 12.3114 12.25 11.667V7C12.25 6.35562 11.7277 5.83324 11.0833 5.83324H9.91667M4.08333 5.83324H9.91667M7.58333 9.33352C7.58333 9.65571 7.32217 9.9169 7 9.9169C6.67783 9.9169 6.41667 9.65571 6.41667 9.33352C6.41667 9.01133 6.67783 8.75014 7 8.75014C7.32217 8.75014 7.58333 9.01133 7.58333 9.33352Z"
                     strokeWidth="1.6"
                     strokeLinecap="round"
-                    stroke="#7A1F3D"
+                    stroke="#6B6468"
                   />
                 </g>
                 <defs>
@@ -225,13 +225,13 @@ export default function ClubRepLoginPage() {
                   </clipPath>
                 </defs>
               </svg>
-              <p className="text-[#7A1F3D] font-inter text-xs w-fit">
+              <p className="text-[#6B6468] font-inter text-xs w-fit">
                 One university account. No extra password.
               </p>
             </button>
 
             <div className="flex flex-col items-center gap-1.5 w-full">
-              <p className="text-[#7A1F3D] font-inter text-xs">
+              <p className="text-[#6B6468] font-inter text-xs">
                 Sign in as a different role?
               </p>
               <div className="flex items-center gap-4">
@@ -252,14 +252,14 @@ export default function ClubRepLoginPage() {
       </div>
 
       <div className="flex py-0 px-14 justify-between items-center w-full h-20 overflow-hidden">
-        <p className="text-[#7A1F3D] font-inter text-xs w-fit">
+        <p className="text-[#6B6468] font-inter text-xs w-fit">
           SUBook · Bringing campus together
         </p>
         <div className="flex items-start gap-6 w-fit overflow-hidden">
-          <Link to="/privacy" className="text-[#7A1F3D] font-inter text-xs w-fit hover:underline">
+          <Link to="/privacy" className="text-[#6B6468] font-inter text-xs w-fit hover:underline">
             Privacy
           </Link>
-          <Link to="/terms" className="text-[#7A1F3D] font-inter text-xs w-fit hover:underline">
+          <Link to="/terms" className="text-[#6B6468] font-inter text-xs w-fit hover:underline">
             Terms of use
           </Link>
         </div>
