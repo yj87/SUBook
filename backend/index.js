@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import bookingRoutes from './routes/bookings.js';
 import venueRoutes from './routes/venues.js';
+import ocrRoutes from './routes/ocr.js';
 
 dotenv.config();
 
@@ -59,6 +60,7 @@ console.log("Booking Routes loaded:", typeof bookingRoutes);
 console.log("=======================");
 app.use('/api/bookings', bookingRoutes);
 app.use('/api', venueRoutes);
+app.use(ocrRoutes);
 
 const PORT = process.env.PORT || 5000;
 if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
