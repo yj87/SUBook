@@ -83,13 +83,9 @@ router.get('/calendar', requireMPPAdmin, async (req, res) => {
     const { data, error } = await query.order('start_time', { ascending: true });
 
     if (error) {
-      console.error('[Calendar Debug]', {
-        'Requested Start': requestedStart,
-        'Requested End': requestedEnd,
-        'Supabase Query Error': { message: error.message, code: error.code || null },
-        'Raw Record Count': 0,
-        'Filtered Record Count': 0,
-        'Returned Booking Count': 0,
+      console.error('[Calendar] Supabase query failed:', {
+        code: error.code || null,
+        message: error.message,
       });
       throw error;
     }
@@ -99,10 +95,8 @@ router.get('/calendar', requireMPPAdmin, async (req, res) => {
       CALENDAR_BOOKING_STATUSES.includes(String(booking.status || '').trim().toLowerCase())
     );
 
-    console.info('[Calendar Debug]', {
-      'Requested Start': requestedStart,
-      'Requested End': requestedEnd,
-      'Supabase Query Error': null,
+    console.log('[Calendar Debug]', {
+      'Query Status': 'Success',
       'Raw Record Count': rawBookings.length,
       'Filtered Record Count': bookings.length,
       'Returned Booking Count': bookings.length,
