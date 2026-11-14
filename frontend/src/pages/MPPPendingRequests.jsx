@@ -15,7 +15,6 @@ const EXPIRED           = 'expired';
 const VERIFY_MATCHED    = 'matched';
 const VERIFY_MISMATCH   = 'mismatch';
 const VERIFY_UNREADABLE = 'unreadable';
-const VERIFY_SKIPPED    = 'skipped';
 
 const BLOCK_APPROVE_WITHOUT_VERIFICATION = false;
 
@@ -48,8 +47,8 @@ export default function MPPPendingRequests() {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState('');
 
-  // Verification
-  const [decision, setDecision] = useState('');      // '', 'matched', 'mismatch', 'unreadable'
+  // Verification (one row per booking, upserted)
+  const [decision, setDecision] = useState('');
   const [remarks, setRemarks] = useState('');
   const [savingVerification, setSavingVerification] = useState(false);
   const [verificationError, setVerificationError] = useState('');
@@ -86,7 +85,7 @@ export default function MPPPendingRequests() {
             profiles!bookings_profile_id_fkey ( profile_id, full_name, matric_no, role ),
             venues ( venue_name, is_shared, capacity ),
             ocr_verifications (
-              id, status, remarks, extracted, mismatches, created_at,
+              id, status, remarks, extracted, mismatches, created_at, updated_at,
               verifier:verified_by ( profile_id, full_name, role )
             )
           `)
@@ -95,16 +94,9 @@ export default function MPPPendingRequests() {
 
         if (fetchError) throw fetchError;
 
-        const normalised = (data || []).map(b => ({
-          ...b,
-          ocr_verifications: (b.ocr_verifications || [])
-            .slice()
-            .sort((a, c) => new Date(c.created_at) - new Date(a.created_at)),
-        }));
-
         if (!cancelled) {
-          setRequests(normalised);
-          if (normalised.length > 0) setSelectedRequest(normalised[0]);
+          setRequests(data || []);
+          if (data && data.length > 0) setSelectedRequest(data[0]);
         }
       } catch (err) {
         if (!cancelled) setError(err.message);
@@ -116,16 +108,16 @@ export default function MPPPendingRequests() {
     return () => { cancelled = true; };
   }, []);
 
-  // Reset on selection change
+  // Hydrate radios/remarks from existing verification when selection changes
   useEffect(() => {
     setReviewInitialized(false);
     setOcrData(null);
     setOcrError('');
     setOcrLoading(false);
-    setDecision('');
     setVerificationError('');
-    const latest = selectedRequest?.ocr_verifications?.[0];
-    setRemarks(latest?.remarks || '');
+    const v = selectedRequest?.ocr_verifications?.[0];
+    setDecision(v?.status || '');
+    setRemarks(v?.remarks || '');
     setReviewFields({
       clubName: '', eventName: '', eventDate: '', eventTime: '',
       venue: '', attendees: '', signatory: '',
@@ -216,7 +208,7 @@ export default function MPPPendingRequests() {
     }
   };
 
-  // ── Save verification (INSERT new row) ────────────────────────────
+  // ── Save verification — UPSERT one row per booking ────────────────
   const handleSaveVerification = async () => {
     if (!selectedRequest) return;
 
@@ -240,33 +232,30 @@ export default function MPPPendingRequests() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      const insertRow = {
+      const payload = {
         booking_id: selectedRequest.booking_id,
         verified_by: user.id,
         status,
         remarks: remarks.trim() || null,
         extracted: ocrData || null,
         mismatches: mismatchRows,
+        updated_at: new Date().toISOString(),
       };
 
-      const { data: inserted, error: insErr } = await supabase
+      const { data: saved, error: upErr } = await supabase
         .from('ocr_verifications')
-        .insert(insertRow)
+        .upsert(payload, { onConflict: 'booking_id' })
         .select(`
-          id, status, remarks, extracted, mismatches, created_at,
+          id, status, remarks, extracted, mismatches, created_at, updated_at,
           verifier:verified_by ( profile_id, full_name, role )
         `)
         .single();
-      if (insErr) throw insErr;
+      if (upErr) throw upErr;
 
-      const updated = {
-        ...selectedRequest,
-        ocr_verifications: [inserted, ...(selectedRequest.ocr_verifications || [])],
-      };
-      setSelectedRequest(updated);
+      setSelectedRequest(prev => ({ ...prev, ocr_verifications: [saved] }));
       setRequests(prev => prev.map(r =>
         r.booking_id === selectedRequest.booking_id
-          ? { ...r, ocr_verifications: updated.ocr_verifications }
+          ? { ...r, ocr_verifications: [saved] }
           : r));
     } catch (err) {
       setVerificationError(err.message);
@@ -290,7 +279,7 @@ export default function MPPPendingRequests() {
       const patch = { status: AWAITING_PAYMENT };
       setRequests(prev => prev.map(r =>
         r.booking_id === selectedRequest.booking_id ? { ...r, ...patch } : r));
-      setSelectedRequest({ ...selectedRequest, ...patch });
+      setSelectedRequest(prev => ({ ...prev, ...patch }));
     } catch (err) {
       alert('Error approving: ' + err.message);
     } finally {
@@ -315,7 +304,7 @@ export default function MPPPendingRequests() {
       const patch = { status: REJECTED, rejection_reason: data.rejection_reason ?? trimmed };
       setRequests(prev => prev.map(r =>
         r.booking_id === selectedRequest.booking_id ? { ...r, ...patch } : r));
-      setSelectedRequest({ ...selectedRequest, ...patch });
+      setSelectedRequest(prev => ({ ...prev, ...patch }));
       setShowRejectDialog(false);
       setRejectReason('');
     } catch (err) {
@@ -371,10 +360,9 @@ export default function MPPPendingRequests() {
   const totalAmount =
     Number(selectedRequest?.quoted_rate || 0) + Number(selectedRequest?.quoted_deposit || 0);
 
-  const latestVerification = selectedRequest?.ocr_verifications?.[0];
-  const verificationStatus = latestVerification?.status;
+  const verification = selectedRequest?.ocr_verifications?.[0];
+  const verificationStatus = verification?.status;
 
-  // Auto-suggested status for the radio group
   const suggestedStatus = (() => {
     if (!ocrData) return '';
     const fields = buildComparison();
@@ -455,7 +443,7 @@ export default function MPPPendingRequests() {
                   <p className="text-xs text-[#6B6468] italic text-center py-4">No matching requests found.</p>
                 ) : (
                   filteredAndSortedRequests.map((req) => {
-                    const latest = req.ocr_verifications?.[0];
+                    const v = req.ocr_verifications?.[0];
                     return (
                       <button key={req.booking_id}
                         onClick={() => { setSelectedRequest(req); setRejectReason(''); setRejectError(''); }}
@@ -487,14 +475,14 @@ export default function MPPPendingRequests() {
                         <p className="text-xs text-[#6B6468] truncate mt-1">
                           {req.venues?.venue_name} · {formatDate(req.start_time)}
                         </p>
-                        {latest && (
+                        {v && (
                           <p className={`mt-1 text-[10px] font-semibold ${
-                            latest.status === 'matched'   ? 'text-[#17703A]' :
-                            latest.status === 'mismatch'  ? 'text-[#8A6D00]' :
-                            latest.status === 'unreadable'? 'text-[#A12632]' :
-                                                            'text-[#6B6468]'
+                            v.status === 'matched'   ? 'text-[#17703A]' :
+                            v.status === 'mismatch'  ? 'text-[#8A6D00]' :
+                            v.status === 'unreadable'? 'text-[#A12632]' :
+                                                       'text-[#6B6468]'
                           }`}>
-                            OCR: {latest.status}
+                            OCR: {v.status}
                           </p>
                         )}
                       </button>
@@ -532,6 +520,25 @@ export default function MPPPendingRequests() {
                     {selectedRequest.status === CANCELLED        && 'Cancelled'}
                     {selectedRequest.status === EXPIRED          && 'Expired'}
                   </div>
+
+                  {verificationStatus && (
+                    <div className="mt-2 text-xs">
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold ${
+                        verificationStatus === 'matched'    ? 'bg-[#CDEFD6] text-[#17703A]' :
+                        verificationStatus === 'mismatch'   ? 'bg-[#FFF3CD] text-[#8A6D00]' :
+                        verificationStatus === 'unreadable' ? 'bg-[#FFCDCD] text-[#A12632]' :
+                                                              'bg-[#EDEDED] text-[#6B6468]'
+                      }`}>
+                        OCR: {verificationStatus}
+                      </span>
+                      {verification?.verifier?.full_name && (
+                        <span className="ml-2 text-[#6B6468]">by {verification.verifier.full_name}</span>
+                      )}
+                      {verification?.updated_at && (
+                        <span className="ml-2 text-[#6B6468]">· {formatDateTime(verification.updated_at)}</span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Summary grid */}
@@ -610,10 +617,10 @@ export default function MPPPendingRequests() {
                         );
                       })()}
 
-                      {/* Verification form */}
+                      {/* Inline verification — radios + remarks + Save */}
                       <div className="rounded-xl border border-[#E3DEE0] bg-white p-4 space-y-3">
                         <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-bold text-[#1F1A1C]">Record verification</h4>
+                          <h4 className="text-sm font-bold text-[#1F1A1C]">Mark verification</h4>
                           {verificationStatus && (
                             <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                               verificationStatus === 'matched'    ? 'bg-[#CDEFD6] text-[#17703A]' :
@@ -626,7 +633,6 @@ export default function MPPPendingRequests() {
                           )}
                         </div>
 
-                        {/* Status radio buttons */}
                         <div>
                           <p className="text-xs font-semibold text-[#6B6468] mb-2">
                             Mark as
@@ -677,36 +683,6 @@ export default function MPPPendingRequests() {
                           {savingVerification ? 'Saving…' : 'Save verification'}
                         </button>
                       </div>
-
-                      {/* Saved verification history */}
-                      {(selectedRequest.ocr_verifications || []).length > 0 && (
-                        <div className="rounded-xl border border-[#E3DEE0] bg-white p-4">
-                          <h4 className="text-sm font-bold text-[#1F1A1C] mb-2">Verification history</h4>
-                          <div className="space-y-2">
-                            {selectedRequest.ocr_verifications.map(v => (
-                              <div key={v.id} className="rounded-lg border border-[#E3DEE0] bg-[#FAF9FA] p-3 text-xs">
-                                <div className="flex items-center justify-between">
-                                  <span className={`font-semibold ${
-                                    v.status === 'matched'    ? 'text-[#17703A]' :
-                                    v.status === 'mismatch'   ? 'text-[#8A6D00]' :
-                                    v.status === 'unreadable' ? 'text-[#A12632]' : 'text-[#6B6468]'
-                                  }`}>{v.status.toUpperCase()}</span>
-                                  <span className="text-[#6B6468]">{formatDateTime(v.created_at)}</span>
-                                </div>
-                                {v.verifier?.full_name && (
-                                  <p className="text-[#6B6468] mt-1">By {v.verifier.full_name}</p>
-                                )}
-                                {v.remarks && <p className="mt-1 text-[#1F1A1C] whitespace-pre-wrap">{v.remarks}</p>}
-                                {Array.isArray(v.mismatches) && v.mismatches.length > 0 && (
-                                  <p className="mt-1 text-[#8A6D00]">
-                                    Mismatched fields: {v.mismatches.map(m => m.field).join(', ')}
-                                  </p>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   ) : (
                     <p className="text-[#6B6468] italic">Not Applicable (No document needed for shared venues)</p>
@@ -722,17 +698,16 @@ export default function MPPPendingRequests() {
                         Approve
                       </button>
                       <button
-  onClick={() => {
-    const latest = selectedRequest.ocr_verifications?.[0];
-    setRejectReason(latest?.remarks || '');
-    setRejectError('');
-    setShowRejectDialog(true);
-  }}
-  disabled={isProcessing}
-  className="rounded-lg bg-[#A12632] px-8 py-3 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50 cursor-pointer"
->
-  Reject
-</button>
+                        onClick={() => {
+                          const latestRemarks = selectedRequest.ocr_verifications?.[0]?.remarks;
+                          setRejectReason(latestRemarks || '');
+                          setRejectError('');
+                          setShowRejectDialog(true);
+                        }}
+                        disabled={isProcessing}
+                        className="rounded-lg bg-[#A12632] px-8 py-3 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50 cursor-pointer">
+                        Reject
+                      </button>
                     </>
                   )}
                   {selectedRequest.status === AWAITING_PAYMENT && (
