@@ -52,6 +52,7 @@ router.get('/calendar', requireMPPAdmin, async (req, res) => {
       .from('bookings')
       .select(`
         booking_id,
+        booking_ref,
         event_name,
         purpose,
         booking_type,
