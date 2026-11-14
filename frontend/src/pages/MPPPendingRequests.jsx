@@ -48,6 +48,8 @@ export default function MPPPendingRequests() {
     clubName: '',
     eventName: '',
     eventDate: '',
+    eventTime: '',
+    venue: '',
     attendees: '',
     signatory: '',
   });
@@ -106,10 +108,15 @@ export default function MPPPendingRequests() {
   // ── Reset review state when selected request changes ──────────────
   useEffect(() => {
     setReviewInitialized(false);
+    setOcrData(null);
+    setOcrError('');
+    setOcrLoading(false);
     setReviewFields({
       clubName: '',
       eventName: '',
       eventDate: '',
+      eventTime: '',
+      venue: '',
       attendees: '',
       signatory: '',
     });
@@ -141,6 +148,13 @@ export default function MPPPendingRequests() {
     }
   };
 
+  // Build submitted "time" string for display + comparison
+  const getSubmittedTime = (req = selectedRequest) => {
+    if (!req) return '—';
+    if (req.booking_type === 'daily') return 'Whole Day';
+    return `${formatTime(req.start_time)} – ${formatTime(req.end_time)}`;
+  };
+
   // ── OCR Extract ───────────────────────────────────────────────────
   const handleExtractOcr = async () => {
     if (!selectedRequest?.approval_letter_url) return;
@@ -170,6 +184,8 @@ export default function MPPPendingRequests() {
         clubName:   extracted.clubName   || selectedRequest.profiles?.full_name || '',
         eventName:  extracted.eventName  || selectedRequest.event_name || '',
         eventDate:  extracted.eventDate  || selectedRequest.start_time?.split('T')[0] || '',
+        eventTime:  extracted.eventTime  || getSubmittedTime(),
+        venue:      extracted.venue      || selectedRequest.venues?.venue_name || '',
         attendees:  extracted.attendees != null ? String(extracted.attendees) : String(selectedRequest.expected_attendees ?? ''),
         signatory:  extracted.signatory  || '',
       });
@@ -192,7 +208,7 @@ export default function MPPPendingRequests() {
       if (error) throw error;
 
       const patch = { status: AWAITING_PAYMENT };
-      setRequests(requests.map(r =>
+      setRequests(prev => prev.map(r =>
         r.booking_id === selectedRequest.booking_id ? { ...r, ...patch } : r));
       setSelectedRequest({ ...selectedRequest, ...patch });
     } catch (err) {
@@ -222,7 +238,7 @@ export default function MPPPendingRequests() {
         status: REJECTED,
         rejection_reason: data.rejection_reason ?? trimmed,
       };
-      setRequests(requests.map(r =>
+      setRequests(prev => prev.map(r =>
         r.booking_id === selectedRequest.booking_id ? { ...r, ...patch } : r));
       setSelectedRequest({ ...selectedRequest, ...patch });
       setShowRejectDialog(false);
@@ -234,53 +250,67 @@ export default function MPPPendingRequests() {
     }
   };
 
-  // ── Comparison: OCR vs MPP-reviewed values ────────────────────────
+  // ── Comparison: OCR vs SUBMITTED DB values (not vs review) ────────
   const buildComparison = () => {
     if (!ocrData) return [];
 
     const eq = (a, b) =>
       String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
 
+    const submittedVenue = selectedRequest?.venues?.venue_name;
+    const submittedDate  = selectedRequest?.start_time?.split('T')[0];
+    const submittedTime  = getSubmittedTime();
+
     return [
       {
         key: 'clubName',
         label: 'Club name',
-        ocr: ocrData.clubName,
-        review: reviewFields.clubName,
         submitted: selectedRequest?.profiles?.full_name,
-        match: eq(ocrData.clubName, reviewFields.clubName),
+        ocr: ocrData.clubName,
+        match: eq(ocrData.clubName, selectedRequest?.profiles?.full_name),
       },
       {
         key: 'eventName',
         label: 'Event name',
-        ocr: ocrData.eventName,
-        review: reviewFields.eventName,
         submitted: selectedRequest?.event_name,
-        match: eq(ocrData.eventName, reviewFields.eventName),
+        ocr: ocrData.eventName,
+        match: eq(ocrData.eventName, selectedRequest?.event_name),
       },
       {
         key: 'eventDate',
         label: 'Event date',
+        submitted: submittedDate,
         ocr: ocrData.eventDate,
-        review: reviewFields.eventDate,
-        submitted: selectedRequest?.start_time?.split('T')[0],
-        match: eq(ocrData.eventDate, reviewFields.eventDate),
+        match: eq(ocrData.eventDate, submittedDate),
+      },
+      {
+        key: 'eventTime',
+        label: 'Time',
+        submitted: submittedTime,
+        ocr: ocrData.eventTime,
+        match: eq(ocrData.eventTime, submittedTime),
+      },
+      {
+        key: 'venue',
+        label: 'Venue',
+        submitted: submittedVenue,
+        ocr: ocrData.venue,
+        match: eq(ocrData.venue, submittedVenue),
       },
       {
         key: 'attendees',
         label: 'Attendees',
-        ocr: ocrData.attendees,
-        review: reviewFields.attendees,
         submitted: selectedRequest?.expected_attendees,
-        match: Number(ocrData.attendees) === Number(reviewFields.attendees),
+        ocr: ocrData.attendees,
+        match: Number(ocrData.attendees) === Number(selectedRequest?.expected_attendees),
       },
       {
         key: 'signatory',
         label: 'Signatory',
-        ocr: ocrData.signatory,
-        review: reviewFields.signatory,
         submitted: '—',
-        match: true,
+        ocr: ocrData.signatory,
+        // No DB field to compare against; flag if OCR is missing.
+        match: !!ocrData.signatory,
       },
     ];
   };
@@ -414,9 +444,6 @@ export default function MPPPendingRequests() {
                         setSelectedRequest(req);
                         setRejectReason('');
                         setRejectError('');
-                        setOcrData(null);
-                        setOcrError('');
-                        setOcrLoading(false);
                       }}
                       className={`text-left p-3 rounded-lg border transition-colors ${
                         selectedRequest?.booking_id === req.booking_id
@@ -587,7 +614,7 @@ export default function MPPPendingRequests() {
                             </p>
                           )}
 
-                          {/* ── OCR Comparison + Manual Review ─────── */}
+                          {/* ── OCR vs Submitted comparison + MPP review ─── */}
                           {ocrData && reviewInitialized && (() => {
                             const fields = buildComparison();
                             const mismatches = fields.filter(f => !f.match).length;
@@ -609,10 +636,11 @@ export default function MPPPendingRequests() {
                                   )}
                                 </div>
 
-                                <div className="grid grid-cols-[100px_1fr_1fr_24px] gap-3 border-b border-[#E3DEE0] bg-[#FAF9FA] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#6B6468]">
+                                <div className="grid grid-cols-[100px_1fr_1fr_1fr_28px] gap-3 border-b border-[#E3DEE0] bg-[#FAF9FA] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#6B6468]">
                                   <span>Field</span>
+                                  <span>Submitted (DB)</span>
                                   <span>OCR Extracted</span>
-                                  <span>Review / Edit</span>
+                                  <span>MPP Review</span>
                                   <span />
                                 </div>
 
@@ -620,23 +648,22 @@ export default function MPPPendingRequests() {
                                   {fields.map((f) => (
                                     <div
                                       key={f.key}
-                                      className={`grid grid-cols-[100px_1fr_1fr_24px] gap-3 px-4 py-2.5 text-[13px] items-center ${
+                                      className={`grid grid-cols-[100px_1fr_1fr_1fr_28px] gap-3 px-4 py-2.5 text-[13px] items-center ${
                                         f.match ? '' : 'bg-[#FFF9E6]'
                                       }`}
                                     >
                                       <span className="font-medium text-[#6B6468]">{f.label}</span>
+                                      <span className="text-[#1F1A1C] truncate" title={String(f.submitted)}>
+                                        {String(f.submitted ?? '—')}
+                                      </span>
                                       <span className="text-[#1F1A1C] truncate" title={String(f.ocr)}>
                                         {String(f.ocr ?? '—')}
                                       </span>
                                       <input
                                         type="text"
-                                        value={f.review ?? ''}
+                                        value={reviewFields[f.key] ?? ''}
                                         onChange={(e) => handleReviewChange(f.key, e.target.value)}
-                                        className={`w-full rounded border px-2 py-1 text-[13px] outline-none ${
-                                          f.match
-                                            ? 'border-[#E3DEE0] bg-white'
-                                            : 'border-[#D97706] bg-[#FFFDF5] font-semibold text-[#A12632]'
-                                        }`}
+                                        className="w-full rounded border border-[#E3DEE0] bg-white px-2 py-1 text-[13px] outline-none focus:border-[#7A1F3D]"
                                       />
                                       <span className={`text-center ${f.match ? 'text-[#17703A]' : 'text-[#D97706]'}`}>
                                         {f.match ? '✔' : '⚠'}
@@ -646,7 +673,7 @@ export default function MPPPendingRequests() {
                                 </div>
 
                                 <div className="border-t border-[#E3DEE0] bg-[#FAF9FA] px-4 py-2 text-[11px] text-[#6B6468]">
-                                  MPP may correct any field before approving. Highlighted rows indicate the OCR value differs from the reviewed value.
+                                  ✔ / ⚠ compares the OCR result against what the applicant submitted in the database. The MPP Review column is for corrections only and does not affect the flag.
                                 </div>
                               </div>
                             );

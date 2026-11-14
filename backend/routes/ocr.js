@@ -64,7 +64,20 @@ async function callGeminiWithRetry(content) {
 }
 
 const EXTRACT_PROMPT = `Extract these fields from this approval letter. Return ONLY valid JSON:
-{"clubName":"string or null","eventName":"string or null","eventDate":"YYYY-MM-DD or null","attendees":number or null,"signatory":"string or null"}`;
+{
+  "clubName": "string or null",
+  "eventName": "string or null",
+  "eventDate": "YYYY-MM-DD or null",
+  "eventTime": "string or null",
+  "venue": "string or null",
+  "attendees": number or null,
+  "signatory": "string or null"
+}
+
+Rules:
+- eventTime: return as "HH:MM – HH:MM" (24-hour clock, en dash). If the letter explicitly says it is a whole-day event or gives no specific times, return exactly "Whole Day".
+- venue: return the venue/place name exactly as written in the letter. Do not include address/city unless it is part of the venue name.
+- Use null when a field is not present. Do not invent or guess values.`;
 
 function parseExtracted(result) {
   const raw = result.response.text().trim()
