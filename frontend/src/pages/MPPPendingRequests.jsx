@@ -271,7 +271,7 @@ export default function MPPPendingRequests() {
           <p className="text-sm text-[#6B6468]">Review booking requests</p>
         </div>
 
-        {loading ? (
+        {loading ? ( 
           <p className="mt-10 text-[#6B6468]">Loading requests...</p>
         ) : error ? (
           <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-red-700">{error}</div>
