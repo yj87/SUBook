@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { Link } from 'react-router-dom';
 
 const ACCENT = '#7A1F3D';       // admin accent (red)
-const ACCENT_HOVER = '#5c162d';
+const ACCENT_HOVER = '#7A1F3D';
 
 export default function AdminLoginPage() {
   const [errorMsg, setErrorMsg] = useState('');
@@ -38,7 +38,7 @@ export default function AdminLoginPage() {
           <Link to="/login" className="text-[#7A1F3D] font-inter text-2xl font-bold w-fit hover:opacity-80 transition-opacity">
   SUBook
 </Link>
-          <p className="text-[#7A1F3D] font-inter text-[13px] w-fit hidden sm:block">
+          <p className="text-[#6B6468] font-inter text-[13px] w-fit hidden sm:block">
             Venue booking &amp; campus events
           </p>
         </div>
@@ -79,10 +79,10 @@ export default function AdminLoginPage() {
             <p className="font-inter text-[11px] font-semibold w-fit" style={{ color: ACCENT }}>
               ADMINISTRATION PORTAL
             </p>
-            <p className="text-[#7A1F3D] font-inter text-[32px] sm:text-[42px] font-bold leading-[1.12em] w-full">
+            <p className="text-[#1F1A1C] font-inter text-[32px] sm:text-[42px] font-bold leading-[1.12em] w-full">
               Keep campus running smoothly.
             </p>
-            <p className="text-[#7A1F3D] font-inter text-base leading-[1.65em] w-full max-w-[405px]">
+            <p className="text-[#6B6468] font-inter text-base leading-[1.65em] w-full max-w-[405px]">
               Approve bookings, manage venues, and review audit logs — all from one
               secure dashboard.
             </p>
@@ -98,11 +98,11 @@ export default function AdminLoginPage() {
           <div className="flex items-start gap-7 w-fit overflow-hidden">
             <div className="flex items-center gap-2 w-fit overflow-hidden">
               <ShieldIcon color={ACCENT} />
-              <p className="text-[#7A1F3D] font-inter text-[13px] font-medium w-fit">Role-restricted access</p>
+              <p className="text-[#6B6468] font-inter text-[13px] font-medium w-fit">Role-restricted access</p>
             </div>
             <div className="flex items-center gap-2 w-fit overflow-hidden">
               <LockIcon color={ACCENT} />
-              <p className="text-[#7A1F3D] font-inter text-[13px] font-medium w-fit">Actions are logged</p>
+              <p className="text-[#6B6468] font-inter text-[13px] font-medium w-fit">Actions are logged</p>
             </div>
           </div>
         </div>
@@ -116,10 +116,10 @@ export default function AdminLoginPage() {
             >
               Admin
             </span>
-            <p className="text-[#7A1F3D] font-inter text-3xl font-bold w-full">
+            <p className="text-[#1F1A1C] font-inter text-3xl font-bold w-full">
               Administrator sign in
             </p>
-            <p className="text-[#7A1F3D] font-inter text-sm leading-[1.6em] w-full">
+            <p className="text-[#6B6468] font-inter text-sm leading-[1.6em] w-full">
               Sign in with your authorised administrator account to continue.
             </p>
           </div>
@@ -143,7 +143,7 @@ export default function AdminLoginPage() {
                 <path d="M3.74939 8.99999H14.2506M8.99999 14.2506L14.2506 8.99999L8.99999 3.74939" strokeWidth="1.8" strokeLinecap="round" stroke="white" />
               </svg>
             </button>
-            <p className="text-[#7A1F3D] font-inter text-xs leading-[1.6em] w-full text-center">
+            <p className="text-[#6B6468] font-inter text-xs leading-[1.6em] w-full text-center">
               You'll be redirected to your university's secure sign-in page.
             </p>
           </div>
@@ -165,7 +165,7 @@ export default function AdminLoginPage() {
 
           <div className="flex pt-5 flex-col items-start gap-4 border-t border-t-[#E3DEE0] w-full overflow-hidden">
             <div className="flex flex-col items-center gap-1.5 w-full">
-              <p className="text-[#7A1F3D] font-inter text-xs">Sign in as a different role?</p>
+              <p className="text-[#6B6468] font-inter text-xs">Sign in as a different role?</p>
               <div className="flex items-center gap-4">
                 <Link to="/login" className="font-inter text-xs font-semibold hover:underline" style={{ color: '#7A1F3D' }}>
                   👉 Student login 
@@ -184,10 +184,10 @@ export default function AdminLoginPage() {
 
       {/* ── Footer (same as student page) ── */}
       <div className="flex py-0 px-14 justify-between items-center w-full h-20 overflow-hidden">
-        <p className="text-[#7A1F3D] font-inter text-xs w-fit">SUBook · Bringing campus together</p>
+        <p className="text-[#6B6468] font-inter text-xs w-fit">SUBook · Bringing campus together</p>
         <div className="flex items-start gap-6 w-fit overflow-hidden">
-          <Link to="/privacy" className="text-[#7A1F3D] font-inter text-xs w-fit hover:underline">Privacy</Link>
-          <Link to="/terms" className="text-[#7A1F3D] font-inter text-xs w-fit hover:underline">Terms of use</Link>
+          <Link to="/privacy" className="text-[#6B6468] font-inter text-xs w-fit hover:underline">Privacy</Link>
+          <Link to="/terms" className="text-[#6B6468] font-inter text-xs w-fit hover:underline">Terms of use</Link>
         </div>
       </div>
     </div>
@@ -200,7 +200,7 @@ function FeatureLine({ color, label }) {
   return (
     <div className="flex items-center gap-2.5 w-fit overflow-hidden">
       <div className="rounded-full w-1.5 h-1.5" style={{ backgroundColor: color }} />
-      <p className="text-[#7A1F3D] font-inter text-[13px] font-medium w-fit">{label}</p>
+      <p className="text-[#6B6468] font-inter text-[13px] font-medium w-fit">{label}</p>
     </div>
   );
 }
