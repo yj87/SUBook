@@ -46,6 +46,7 @@ function BookingDetails({ booking, onClose }) {
           <button type="button" onClick={onClose} className="text-2xl leading-none text-[#6B6468]" aria-label="Close booking details">×</button>
         </div>
         <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 text-sm">
+          <dt className="font-semibold text-[#6B6468]">Booking Reference</dt><dd className="min-w-0 break-words text-[#1F1A1C]">{booking.booking_ref || '—'}</dd>
           <dt className="font-semibold text-[#6B6468]">Venue</dt><dd className="min-w-0 break-words text-[#1F1A1C]">{booking.venueName}</dd>
           <dt className="font-semibold text-[#6B6468]">Date</dt><dd className="text-[#1F1A1C]">{formatDate(booking.start)}</dd>
           <dt className="font-semibold text-[#6B6468]">Time</dt><dd className="text-[#1F1A1C]">{booking.type === 'daily' ? 'Full day' : `${formatTime(booking.start)} – ${formatTime(booking.end)}`}</dd>
