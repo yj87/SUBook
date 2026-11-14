@@ -49,8 +49,8 @@ export default function MPPPendingRequests() {
   const [ocrError, setOcrError] = useState('');
 
   // Verification
+  const [decision, setDecision] = useState('');      // '', 'matched', 'mismatch', 'unreadable'
   const [remarks, setRemarks] = useState('');
-  const [markUnreadable, setMarkUnreadable] = useState(false);
   const [savingVerification, setSavingVerification] = useState(false);
   const [verificationError, setVerificationError] = useState('');
 
@@ -83,7 +83,7 @@ export default function MPPPendingRequests() {
             quoted_deposit,
             paid_at,
             rejection_reason,
-            profiles!bookings_profile_id_fkey ( profile_id, full_name, matric_no, role, club_name ),
+            profiles!bookings_profile_id_fkey ( profile_id, full_name, matric_no, role ),
             venues ( venue_name, is_shared, capacity ),
             ocr_verifications (
               id, status, remarks, extracted, mismatches, created_at,
@@ -95,7 +95,6 @@ export default function MPPPendingRequests() {
 
         if (fetchError) throw fetchError;
 
-        // Sort each booking's verifications so [0] is the latest
         const normalised = (data || []).map(b => ({
           ...b,
           ocr_verifications: (b.ocr_verifications || [])
@@ -123,7 +122,7 @@ export default function MPPPendingRequests() {
     setOcrData(null);
     setOcrError('');
     setOcrLoading(false);
-    setMarkUnreadable(false);
+    setDecision('');
     setVerificationError('');
     const latest = selectedRequest?.ocr_verifications?.[0];
     setRemarks(latest?.remarks || '');
@@ -163,7 +162,7 @@ export default function MPPPendingRequests() {
     setOcrError('');
     setOcrData(null);
     setReviewInitialized(false);
-    setMarkUnreadable(false);
+    setDecision('');
     setVerificationError('');
 
     try {
@@ -182,11 +181,26 @@ export default function MPPPendingRequests() {
       const allEmpty = ['clubName','eventName','eventDate','eventTime','venue','attendees','signatory']
         .every(k => extracted[k] == null || extracted[k] === '');
       if (allEmpty) {
-        setOcrError('OCR could not read any fields. You may mark it as Unreadable below.');
+        setOcrError('OCR could not read any fields. You can still mark the document as Unreadable.');
+        setDecision(VERIFY_UNREADABLE);
+      } else {
+        const eq = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+        const submittedClub  = selectedRequest?.profiles?.full_name;
+        const submittedDate  = selectedRequest?.start_time?.split('T')[0];
+        const submittedTime  = getSubmittedTime();
+        const submittedVenue = selectedRequest?.venues?.venue_name;
+        const anyMismatch =
+          !eq(extracted.clubName,  submittedClub)  ||
+          !eq(extracted.eventName, selectedRequest?.event_name) ||
+          !eq(extracted.eventDate, submittedDate)  ||
+          !eq(extracted.eventTime, submittedTime)  ||
+          !eq(extracted.venue,     submittedVenue) ||
+          Number(extracted.attendees) !== Number(selectedRequest?.expected_attendees);
+        setDecision(anyMismatch ? VERIFY_MISMATCH : VERIFY_MATCHED);
       }
 
       setReviewFields({
-        clubName:   extracted.clubName   || selectedRequest.profiles?.club_name || selectedRequest.profiles?.full_name || '',
+        clubName:   extracted.clubName   || selectedRequest.profiles?.full_name || '',
         eventName:  extracted.eventName  || selectedRequest.event_name || '',
         eventDate:  extracted.eventDate  || selectedRequest.start_time?.split('T')[0] || '',
         eventTime:  extracted.eventTime  || getSubmittedTime(),
@@ -205,21 +219,19 @@ export default function MPPPendingRequests() {
   // ── Save verification (INSERT new row) ────────────────────────────
   const handleSaveVerification = async () => {
     if (!selectedRequest) return;
-    if (markUnreadable && remarks.trim().length < 10) {
-      setVerificationError('Please explain why the document is unreadable (min 10 characters).');
-      return;
-    }
 
     const fields = buildComparison();
     const mismatchRows = fields
       .filter(f => !f.match)
       .map(f => ({ field: f.key, submitted: f.submitted ?? null, ocr: f.ocr ?? null }));
 
-    const status = markUnreadable
-      ? VERIFY_UNREADABLE
-      : mismatchRows.length > 0
-        ? VERIFY_MISMATCH
-        : VERIFY_MATCHED;
+    const autoStatus = mismatchRows.length > 0 ? VERIFY_MISMATCH : VERIFY_MATCHED;
+    const status = decision || autoStatus;
+
+    if ((status === VERIFY_MISMATCH || status === VERIFY_UNREADABLE) && remarks.trim().length < 10) {
+      setVerificationError(`Please explain the ${status === VERIFY_UNREADABLE ? 'unreadable document' : 'mismatch'} (min 10 characters).`);
+      return;
+    }
 
     setVerificationError('');
     setSavingVerification(true);
@@ -247,7 +259,6 @@ export default function MPPPendingRequests() {
         .single();
       if (insErr) throw insErr;
 
-      // Reflect in local state
       const updated = {
         ...selectedRequest,
         ocr_verifications: [inserted, ...(selectedRequest.ocr_verifications || [])],
@@ -314,14 +325,14 @@ export default function MPPPendingRequests() {
     }
   };
 
-  // ── Comparison (OCR vs Submitted DB) ─────────────────────────────
+  // ── Comparison ───────────────────────────────────────────────────
   const buildComparison = () => {
     if (!ocrData) return [];
     const eq = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
     const submittedVenue = selectedRequest?.venues?.venue_name;
     const submittedDate  = selectedRequest?.start_time?.split('T')[0];
     const submittedTime  = getSubmittedTime();
-    const submittedClub  = selectedRequest?.profiles?.club_name || selectedRequest?.profiles?.full_name;
+    const submittedClub  = selectedRequest?.profiles?.full_name;
 
     return [
       { key:'clubName',  label:'Club name', submitted:submittedClub,            ocr:ocrData.clubName,  match:eq(ocrData.clubName,  submittedClub) },
@@ -362,6 +373,19 @@ export default function MPPPendingRequests() {
 
   const latestVerification = selectedRequest?.ocr_verifications?.[0];
   const verificationStatus = latestVerification?.status;
+
+  // Auto-suggested status for the radio group
+  const suggestedStatus = (() => {
+    if (!ocrData) return '';
+    const fields = buildComparison();
+    return fields.some(f => !f.match) ? VERIFY_MISMATCH : VERIFY_MATCHED;
+  })();
+
+  const decisionOptions = [
+    { value: VERIFY_MATCHED,    label: '✔ Verified (matches booking)', activeCls: 'border-[#17703A] bg-[#CDEFD6] text-[#17703A]' },
+    { value: VERIFY_MISMATCH,   label: '⚠ Mismatch',                    activeCls: 'border-[#8A6D00] bg-[#FFF3CD] text-[#8A6D00]' },
+    { value: VERIFY_UNREADABLE, label: '✖ Unreadable',                  activeCls: 'border-[#A12632] bg-[#FFCDCD] text-[#A12632]' },
+  ];
 
   return (
     <div className="flex h-screen bg-[#F6F4F5] overflow-hidden relative">
@@ -510,7 +534,7 @@ export default function MPPPendingRequests() {
                   </div>
                 </div>
 
-                {/* summary grid */}
+                {/* Summary grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5 mb-8">
                   <div><p className="text-xs font-semibold text-[#6B6468] uppercase mb-1">Applicant</p><p className="font-semibold text-sm text-[#1F1A1C]">{selectedRequest.profiles?.full_name}</p></div>
                   <div><p className="text-xs font-semibold text-[#6B6468] uppercase mb-1">Date & Time</p><p className="font-semibold text-sm text-[#1F1A1C]">
@@ -549,7 +573,7 @@ export default function MPPPendingRequests() {
                       )}
 
                       {/* Comparison table */}
-                      {ocrData && reviewInitialized && !markUnreadable && (() => {
+                      {ocrData && reviewInitialized && decision !== VERIFY_UNREADABLE && (() => {
                         const fields = buildComparison();
                         const mismatches = fields.filter(f => !f.match).length;
                         return (
@@ -602,26 +626,53 @@ export default function MPPPendingRequests() {
                           )}
                         </div>
 
-                        <label className="flex items-center gap-2 text-xs font-semibold text-[#1F1A1C] cursor-pointer">
-                          <input type="checkbox" checked={markUnreadable} onChange={(e) => setMarkUnreadable(e.target.checked)} />
-                          Mark document as <span className="text-[#A12632]">Unreadable</span>
-                        </label>
+                        {/* Status radio buttons */}
+                        <div>
+                          <p className="text-xs font-semibold text-[#6B6468] mb-2">
+                            Mark as
+                            {suggestedStatus && (
+                              <span className="ml-1 font-normal text-[#6B6468]">
+                                (system suggests: <strong className="text-[#1F1A1C]">{suggestedStatus}</strong>)
+                              </span>
+                            )}
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {decisionOptions.map(opt => (
+                              <label key={opt.value}
+                                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold cursor-pointer transition-colors ${
+                                  decision === opt.value
+                                    ? opt.activeCls
+                                    : 'border-[#E3DEE0] bg-white text-[#1F1A1C] hover:bg-[#FAF8F9]'
+                                }`}>
+                                <input type="radio" name="verify-decision" value={opt.value}
+                                  checked={decision === opt.value}
+                                  onChange={() => { setDecision(opt.value); if (verificationError) setVerificationError(''); }}
+                                  className="cursor-pointer" />
+                                {opt.label}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
 
                         <div>
                           <label htmlFor="verify-remarks" className="block text-xs font-semibold text-[#6B6468] mb-1">
-                            Remarks for mismatched / unclear information {markUnreadable && <span className="text-[#A12632]">*</span>}
+                            Remarks for mismatched / unclear information
+                            {(decision === VERIFY_MISMATCH || decision === VERIFY_UNREADABLE) && <span className="text-[#A12632]"> *</span>}
                           </label>
                           <textarea id="verify-remarks" rows={3} value={remarks}
                             onChange={(e) => { setRemarks(e.target.value.slice(0, 1000)); if (verificationError) setVerificationError(''); }}
-                            placeholder="e.g. Letter shows 120 attendees but booking states 100. Venue matches. Signatory unclear."
+                            placeholder="e.g. Letter states 120 attendees but booking is 100. Venue matches. Signatory unclear."
                             className="w-full resize-none rounded-lg border border-[#E3DEE0] px-3 py-2 text-sm outline-none focus:border-[#7A1F3D]" />
                           <div className="flex justify-between text-[11px] text-[#6B6468] mt-1">
-                            <span className={verificationError ? 'text-[#A12632]' : ''}>{verificationError || 'Optional unless marking Unreadable'}</span>
+                            <span className={verificationError ? 'text-[#A12632]' : ''}>
+                              {verificationError || ((decision === VERIFY_MISMATCH || decision === VERIFY_UNREADABLE) ? 'Required (min 10 characters)' : 'Optional')}
+                            </span>
                             <span>{remarks.length} / 1000</span>
                           </div>
                         </div>
 
-                        <button onClick={handleSaveVerification} disabled={savingVerification}
+                        <button onClick={handleSaveVerification}
+                          disabled={savingVerification || !decision}
                           className="rounded-lg bg-[#7A1F3D] px-4 py-2 text-xs font-semibold text-white hover:bg-[#651830] disabled:opacity-50 cursor-pointer">
                           {savingVerification ? 'Saving…' : 'Save verification'}
                         </button>
@@ -670,11 +721,18 @@ export default function MPPPendingRequests() {
                         className="rounded-lg bg-[#17703A] px-8 py-3 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-50 cursor-pointer">
                         Approve
                       </button>
-                      <button onClick={() => { setRejectReason(''); setRejectError(''); setShowRejectDialog(true); }}
-                        disabled={isProcessing}
-                        className="rounded-lg bg-[#A12632] px-8 py-3 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50 cursor-pointer">
-                        Reject
-                      </button>
+                      <button
+  onClick={() => {
+    const latest = selectedRequest.ocr_verifications?.[0];
+    setRejectReason(latest?.remarks || '');
+    setRejectError('');
+    setShowRejectDialog(true);
+  }}
+  disabled={isProcessing}
+  className="rounded-lg bg-[#A12632] px-8 py-3 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50 cursor-pointer"
+>
+  Reject
+</button>
                     </>
                   )}
                   {selectedRequest.status === AWAITING_PAYMENT && (
