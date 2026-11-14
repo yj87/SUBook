@@ -434,11 +434,11 @@ export default function ClubBookingApproval() {
               </div>
 
               <div className="flex justify-between items-start gap-4">
-                <div>
+                <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold text-[#6B6468] uppercase">Purpose</p>
-                  <p className="text-sm text-[#1F1A1C] line-clamp-2">{eventDetails.eventPurpose || '—'}</p>
+                  <p className="text-sm font-semibold text-[#1F1A1C] leading-snug">{eventDetails.eventPurpose || '—'}</p>
                 </div>
-                <div className="text-right">
+                <div className="shrink-0 text-right">
                   <p className="text-xs font-semibold text-[#6B6468] uppercase">Attendees</p>
                   <p className="text-sm font-semibold text-[#1F1A1C]">{attendees} pax</p>
                 </div>

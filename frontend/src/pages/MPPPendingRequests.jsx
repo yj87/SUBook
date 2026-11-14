@@ -7,6 +7,7 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const PENDING           = 'pending_approval';
 const AWAITING_PAYMENT  = 'approved_awaiting_payment';
+const PAYMENT_SUBMITTED = 'payment_submitted';
 const CONFIRMED         = 'confirmed';
 const REJECTED          = 'rejected';
 const CANCELLED         = 'cancelled';
@@ -33,10 +34,14 @@ export default function MPPPendingRequests() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [filterVenue, setFilterVenue] = useState('All');
   const [sortOrder, setSortOrder] = useState('newest');
   const [filterUserType, setFilterUserType] = useState('All');
+  
+  // Status Filter (Defaults to showing all 3 active statuses)
+  const [filterStatus, setFilterStatus] = useState('All Active');
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -56,7 +61,8 @@ export default function MPPPendingRequests() {
 
   // MPP overrides — keyed to the current selection
   const [reviewFields, setReviewFields] = useState({});
-    // Normalize so callers always get a single verification row (or null).
+
+  // Normalize so callers always get a single verification row (or null).
   const getVerification = (req) => {
     if (!req?.ocr_verifications) return null;
     return Array.isArray(req.ocr_verifications)
@@ -94,14 +100,20 @@ export default function MPPPendingRequests() {
               verifier:verified_by ( profile_id, full_name, role )
             )
           `)
-          .in('status', [PENDING, AWAITING_PAYMENT, CONFIRMED, REJECTED, CANCELLED, EXPIRED])
+          // ONLY fetch the 3 active statuses
+          .in('status', [PENDING, AWAITING_PAYMENT, PAYMENT_SUBMITTED])
           .order('submitted_at', { ascending: false });
 
         if (fetchError) throw fetchError;
 
         if (!cancelled) {
           setRequests(data || []);
-          if (data && data.length > 0) setSelectedRequest(data[0]);
+          
+          // Auto-select the first PENDING request if it exists
+          if (data && data.length > 0) {
+            const firstPending = data.find(r => r.status === PENDING);
+            setSelectedRequest(firstPending || data[0]);
+          }
         }
       } catch (err) {
         if (!cancelled) setError(err.message);
@@ -114,7 +126,6 @@ export default function MPPPendingRequests() {
   }, []);
 
   // Reset transient UI when the selected booking changes.
-  // Saved values are NOT stored in state — they are read from the row at render time.
   useEffect(() => {
     setOcrData(null);
     setOcrError('');
@@ -295,10 +306,14 @@ export default function MPPPendingRequests() {
         p_booking_id: selectedRequest.booking_id,
       });
       if (error) throw error;
+      
       const patch = { status: AWAITING_PAYMENT };
       setRequests(prev => prev.map(r =>
         r.booking_id === selectedRequest.booking_id ? { ...r, ...patch } : r));
       setSelectedRequest(prev => ({ ...prev, ...patch }));
+      
+      // Deselect to clear the right panel and hide it from pending list
+      setSelectedRequest(null);
     } catch (err) {
       alert('Error approving: ' + err.message);
     } finally {
@@ -320,12 +335,17 @@ export default function MPPPendingRequests() {
         p_reason: trimmed,
       });
       if (error) throw error;
+      
       const patch = { status: REJECTED, rejection_reason: data.rejection_reason ?? trimmed };
       setRequests(prev => prev.map(r =>
         r.booking_id === selectedRequest.booking_id ? { ...r, ...patch } : r));
       setSelectedRequest(prev => ({ ...prev, ...patch }));
+      
       setShowRejectDialog(false);
       setRejectReason('');
+      
+      // Deselect to clear the right panel
+      setSelectedRequest(null);
     } catch (err) {
       setRejectError(err.message);
     } finally {
@@ -339,15 +359,32 @@ export default function MPPPendingRequests() {
   // ── Filters ───────────────────────────────────────────────────────
   const filteredAndSortedRequests = requests
     .filter(req => {
+      // 1. Status Filter
+      if (filterStatus === 'Pending') {
+        if (req.status !== PENDING) return false;
+      } else if (filterStatus === 'Awaiting Payment') {
+        if (req.status !== AWAITING_PAYMENT) return false;
+      } else if (filterStatus === 'Payment Submitted') {
+        if (req.status !== PAYMENT_SUBMITTED) return false;
+      }
+      // If 'All Active', it passes through
+
+      // 2. User Type Filter
       const role = req.profiles?.role;
       if (filterUserType === 'Student' && role !== 'student') return false;
       if (filterUserType === 'Club'    && role !== 'club_representative') return false;
+
+      // 3. Search Query (Matches Ref, Applicant, Event Name, AND Venue Name)
       const q = searchQuery.toLowerCase();
       const matchesSearch =
         (req.profiles?.full_name || '').toLowerCase().includes(q) ||
         (req.event_name || '').toLowerCase().includes(q) ||
-        (req.booking_ref || '').toLowerCase().includes(q);
+        (req.booking_ref || '').toLowerCase().includes(q) ||
+        (req.venues?.venue_name || '').toLowerCase().includes(q);
+
+      // 4. Venue Filter (Dropdown)
       const matchesVenue = filterVenue === 'All' || req.venues?.venue_name === filterVenue;
+
       return matchesSearch && matchesVenue;
     })
     .sort((a, b) => {
@@ -374,6 +411,35 @@ export default function MPPPendingRequests() {
     { value: VERIFY_UNREADABLE, label: '✖ Unreadable',                  activeCls: 'border-[#A12632] bg-[#FFCDCD] text-[#A12632]' },
   ];
 
+  // Helper to render the status badge inside the list items
+  const renderStatusBadge = (status) => {
+    let colorClass = '';
+    let label = '';
+    
+    switch (status) {
+      case PENDING:
+        colorClass = 'bg-[#FFF3CD] text-[#8A6D00]';
+        label = 'Pending Approval';
+        break;
+      case AWAITING_PAYMENT:
+        colorClass = 'bg-[#DCE8FF] text-[#1F4FA3]';
+        label = 'Awaiting Pay';
+        break;
+      case PAYMENT_SUBMITTED:
+        colorClass = 'bg-[#E6F4EA] text-[#17703A]';
+        label = 'Payment Sub';
+        break;
+      default:
+        return null;
+    }
+
+    return (
+      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${colorClass}`}>
+        {label}
+      </span>
+    );
+  };
+
   return (
     <div className="flex h-screen bg-[#F6F4F5] overflow-hidden relative">
       <MPPSidebar
@@ -382,7 +448,7 @@ export default function MPPPendingRequests() {
         setIsProfileOpen={setIsProfileOpen}
       />
 
-      <main className="flex-1 flex flex-col p-4 md:p-10 overflow-y-auto h-full">
+      <main className="flex-1 flex flex-col p-4 md:p-10 h-full overflow-hidden">
         <div className="flex items-center gap-3 md:hidden mb-6">
           <button className="text-[#1F1A1C] p-1 -ml-1 cursor-pointer" onClick={() => setIsMobileMenuOpen(true)}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -391,7 +457,7 @@ export default function MPPPendingRequests() {
           </button>
         </div>
 
-        <div className="mb-8">
+        <div className="mb-8 shrink-0">
           <h1 className="text-2xl md:text-[28px] font-bold text-[#1F1A1C]">My Approval</h1>
           <p className="text-sm text-[#6B6468]">Review booking requests</p>
         </div>
@@ -402,44 +468,73 @@ export default function MPPPendingRequests() {
           <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-red-700">{error}</div>
         ) : requests.length === 0 ? (
           <div className="rounded-xl border border-[#E3DEE0] bg-white p-8 text-center text-[#6B6468]">
-            No booking requests at the moment. You're all caught up!
+            No active booking requests at the moment. You're all caught up!
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-10 items-start h-full min-h-0">
             {/* LEFT LIST */}
-            <div className="rounded-xl border border-[#E3DEE0] bg-white p-4">
-              <h2 className="text-sm font-bold mb-4">
-                Pending requests ({requests.filter(r => r.status === PENDING).length})
-              </h2>
+            <div className="rounded-xl border border-[#E3DEE0] bg-white flex flex-col h-full overflow-hidden">
+              {/* STICKY HEADER (Search & Filters) */}
+              <div className="shrink-0 bg-white p-4 border-b border-[#E3DEE0] rounded-t-xl z-10">
+                <h2 className="text-sm font-bold mb-4">
+                  Active Requests ({filteredAndSortedRequests.length})
+                </h2>
 
-              <div className="flex flex-col gap-3 mb-4">
-                <input type="text" placeholder="Search ref, applicant, or event..."
-                  value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full p-2 border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none" />
-                <div className="grid grid-cols-2 gap-2">
-                  <select value={filterUserType} onChange={(e) => setFilterUserType(e.target.value)}
-                    className="col-span-2 p-2 border border-[#E3DEE0] rounded-lg text-[13px] bg-white cursor-pointer">
-                    <option value="All">All Users</option>
-                    <option value="Student">Students Only</option>
-                    <option value="Club">Clubs Only</option>
+                <div className="flex flex-col gap-3">
+                  {/* Status Filter */}
+                  <select 
+                    value={filterStatus} 
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    className="w-full p-2 border border-[#E3DEE0] rounded-lg text-[13px] font-semibold bg-[#F9F7F8] cursor-pointer"
+                  >
+                    <option value="All Active">All Active Requests</option>
+                    <option value="Pending">Pending Approval</option>
+                    <option value="Awaiting Payment">Awaiting Payment</option>
+                    <option value="Payment Submitted">Payment Submitted</option>
                   </select>
-                  <select value={filterVenue} onChange={(e) => setFilterVenue(e.target.value)}
-                    className="p-2 border border-[#E3DEE0] rounded-lg text-[13px] bg-white cursor-pointer">
-                    {uniqueVenues.map(v => <option key={v} value={v}>{v === 'All' ? 'All Venues' : v}</option>)}
-                  </select>
-                  <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}
-                    className="p-2 border border-[#E3DEE0] rounded-lg text-[13px] bg-white cursor-pointer">
-                    <option value="newest">Newest</option>
-                    <option value="oldest">Oldest</option>
-                    <option value="date_asc">Date (Asc)</option>
-                    <option value="date_desc">Date (Desc)</option>
-                  </select>
+
+                  <input 
+                    type="text" 
+                    placeholder="Search ref, applicant, event, or venue..."
+                    value={searchQuery} 
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full p-2 border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none" 
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select 
+                      value={filterUserType} 
+                      onChange={(e) => setFilterUserType(e.target.value)}
+                      className="col-span-2 p-2 border border-[#E3DEE0] rounded-lg text-[13px] bg-white cursor-pointer"
+                    >
+                      <option value="All">All Users</option>
+                      <option value="Student">Students Only</option>
+                      <option value="Club">Clubs Only</option>
+                    </select>
+                    <select 
+                      value={filterVenue} 
+                      onChange={(e) => setFilterVenue(e.target.value)}
+                      className="p-2 border border-[#E3DEE0] rounded-lg text-[13px] bg-white cursor-pointer"
+                    >
+                      {uniqueVenues.map(v => <option key={v} value={v}>{v === 'All' ? 'All Venues' : v}</option>)}
+                    </select>
+                    <select 
+                      value={sortOrder} 
+                      onChange={(e) => setSortOrder(e.target.value)}
+                      className="p-2 border border-[#E3DEE0] rounded-lg text-[13px] bg-white cursor-pointer"
+                    >
+                      <option value="newest">Newest</option>
+                      <option value="oldest">Oldest</option>
+                      <option value="date_asc">Date (Asc)</option>
+                      <option value="date_desc">Date (Desc)</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3">
+              {/* SCROLLABLE LIST */}
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
                 {filteredAndSortedRequests.length === 0 ? (
-                  <p className="text-xs text-[#6B6468] italic text-center py-4">No matching requests found.</p>
+                  <p className="text-xs text-[#6B6468] italic text-center py-4">No requests match the current filter.</p>
                 ) : (
                   filteredAndSortedRequests.map((req) => {
                     const v = getVerification(req);
@@ -455,21 +550,8 @@ export default function MPPPendingRequests() {
                           <p className="font-semibold text-sm text-[#1F1A1C] truncate">
                               {req.booking_ref || 'Unknown Ref'}
                           </p>
-                          {req.status !== PENDING && (
-                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold
-                              ${req.status === AWAITING_PAYMENT ? 'bg-[#DCE8FF] text-[#1F4FA3]' : ''}
-                              ${req.status === CONFIRMED        ? 'bg-[#CDEFD6] text-[#17703A]' : ''}
-                              ${req.status === REJECTED         ? 'bg-[#FFCDCD] text-[#D57171]' : ''}
-                              ${req.status === CANCELLED        ? 'bg-[#EDEDED] text-[#6B6468]' : ''}
-                              ${req.status === EXPIRED          ? 'bg-[#F2E3CC] text-[#8A6D00]' : ''}
-                            `}>
-                              {req.status === AWAITING_PAYMENT && 'Awaiting Pay'}
-                              {req.status === CONFIRMED        && 'Confirmed'}
-                              {req.status === REJECTED         && 'Rejected'}
-                              {req.status === CANCELLED        && 'Cancelled'}
-                              {req.status === EXPIRED          && 'Expired'}
-                            </span>
-                          )}
+                          {/* Render status for EVERY request */}
+                          {renderStatusBadge(req.status)}
                         </div>
                       
                         <p className="text-xs text-[#6B6468] truncate mt-1">
@@ -494,7 +576,7 @@ export default function MPPPendingRequests() {
 
             {/* RIGHT DETAILS */}
             {selectedRequest && (
-              <div className="rounded-xl border border-[#E3DEE0] bg-white p-6 md:p-8 w-full max-w-3xl">
+              <div className="rounded-xl border border-[#E3DEE0] bg-white p-6 md:p-8 w-full max-w-5xl h-full overflow-y-auto">
                 <div className="mb-6">
                   <h2 className="text-xl font-bold text-[#1F1A1C]">
                     {selectedRequest.booking_ref} – {selectedRequest.venues?.venue_name}
@@ -508,17 +590,11 @@ export default function MPPPendingRequests() {
                   <div className={`mt-3 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold
                     ${selectedRequest.status === PENDING          ? 'bg-[#FFF3CD] text-[#8A6D00]' : ''}
                     ${selectedRequest.status === AWAITING_PAYMENT ? 'bg-[#DCE8FF] text-[#1F4FA3]' : ''}
-                    ${selectedRequest.status === CONFIRMED        ? 'bg-[#CDEFD6] text-[#17703A]' : ''}
-                    ${selectedRequest.status === REJECTED         ? 'bg-[#FFCDCD] text-[#D57171]' : ''}
-                    ${selectedRequest.status === CANCELLED        ? 'bg-[#EDEDED] text-[#6B6468]' : ''}
-                    ${selectedRequest.status === EXPIRED          ? 'bg-[#F2E3CC] text-[#8A6D00]' : ''}
+                    ${selectedRequest.status === PAYMENT_SUBMITTED ? 'bg-[#E6F4EA] text-[#17703A]' : ''}
                   `}>
                     {selectedRequest.status === PENDING          && 'Pending Approval'}
                     {selectedRequest.status === AWAITING_PAYMENT && 'Approved – Awaiting Payment'}
-                    {selectedRequest.status === CONFIRMED        && 'Confirmed'}
-                    {selectedRequest.status === REJECTED         && 'Rejected'}
-                    {selectedRequest.status === CANCELLED        && 'Cancelled'}
-                    {selectedRequest.status === EXPIRED          && 'Expired'}
+                    {selectedRequest.status === PAYMENT_SUBMITTED && 'Payment Submitted'}
                   </div>
 
                   {/* OCR label — ONLY when a verification exists in the DB */}
@@ -719,13 +795,6 @@ export default function MPPPendingRequests() {
                     <button onClick={() => alert('Reminder sent to applicant!')}
                       className="rounded-lg bg-[#F2B705] px-6 py-3 text-sm font-semibold text-[#1F1A1C] hover:bg-yellow-500 cursor-pointer">
                       Send Reminder
-                    </button>
-                  )}
-                  {(selectedRequest.status === CONFIRMED || selectedRequest.status === REJECTED ||
-                    selectedRequest.status === CANCELLED || selectedRequest.status === EXPIRED) && (
-                    <button onClick={() => setSelectedRequest(null)}
-                      className="rounded-lg border border-[#7A1F3D] bg-white px-6 py-3 text-sm font-semibold text-[#7A1F3D] hover:bg-[#FAF3F6] cursor-pointer">
-                      ← Back to List
                     </button>
                   )}
                 </div>
