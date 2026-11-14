@@ -33,7 +33,8 @@ export default function MPPPendingRequests() {
   // Action state
   const [isProcessing, setIsProcessing] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
-  const [showRejectInput, setShowRejectInput] = useState(false);
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [rejectError, setRejectError] = useState('');
 
   // ── Fetch ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -168,12 +169,11 @@ export default function MPPPendingRequests() {
   const handleApprove = async () => {
     setIsProcessing(true);
     try {
-      const { data, error } = await supabase.rpc('approve_booking', {
+      const { error } = await supabase.rpc('approve_booking', {
         p_booking_id: selectedRequest.booking_id,
       });
       if (error) throw error;
 
-      // RPC returns { success, booking_id, payment_amount, payment_deadline }
       const patch = { status: AWAITING_PAYMENT };
       setRequests(requests.map(r =>
         r.booking_id === selectedRequest.booking_id ? { ...r, ...patch } : r));
@@ -187,35 +187,36 @@ export default function MPPPendingRequests() {
 
   // ── Reject ────────────────────────────────────────────────────────
   const handleReject = async () => {
-    if (!rejectReason.trim()) {
-      alert('Please enter a reason for rejection.');
+    const trimmed = rejectReason.trim();
+    if (trimmed.length < 10) {
+      setRejectError('Please enter at least 10 characters explaining the reason.');
       return;
     }
+    setRejectError('');
     setIsProcessing(true);
     try {
       const { error } = await supabase
         .from('bookings')
-        .update({ status: REJECTED, rejection_reason: rejectReason })
+        .update({ status: REJECTED, rejection_reason: trimmed })
         .eq('booking_id', selectedRequest.booking_id);
 
       if (error) throw error;
 
-      // Notify applicant of rejection
       await supabase.from('notifications').insert({
         profile_id: selectedRequest.profiles.profile_id,
         booking_id: selectedRequest.booking_id,
         title: 'Booking Rejected',
-        message: `Your booking at ${selectedRequest.venues.venue_name} was rejected. Reason: ${rejectReason}`,
+        message: `Your booking at ${selectedRequest.venues.venue_name} was rejected. Reason: ${trimmed}`,
       });
 
-      const patch = { status: REJECTED, rejection_reason: rejectReason };
+      const patch = { status: REJECTED, rejection_reason: trimmed };
       setRequests(requests.map(r =>
         r.booking_id === selectedRequest.booking_id ? { ...r, ...patch } : r));
       setSelectedRequest({ ...selectedRequest, ...patch });
-      setShowRejectInput(false);
+      setShowRejectDialog(false);
       setRejectReason('');
     } catch (err) {
-      alert('Error rejecting: ' + err.message);
+      setRejectError(err.message);
     } finally {
       setIsProcessing(false);
     }
@@ -344,8 +345,8 @@ export default function MPPPendingRequests() {
                       key={req.booking_id}
                       onClick={() => {
                         setSelectedRequest(req);
-                        setShowRejectInput(false);
                         setRejectReason('');
+                        setRejectError('');
                       }}
                       className={`text-left p-3 rounded-lg border transition-colors ${
                         selectedRequest?.booking_id === req.booking_id
@@ -561,7 +562,7 @@ export default function MPPPendingRequests() {
                 </div>
 
                 <div className="flex flex-wrap gap-4">
-                  {selectedRequest.status === PENDING && !showRejectInput && (
+                  {selectedRequest.status === PENDING && (
                     <>
                       <button
                         onClick={handleApprove}
@@ -571,7 +572,11 @@ export default function MPPPendingRequests() {
                         Approve
                       </button>
                       <button
-                        onClick={() => setShowRejectInput(true)}
+                        onClick={() => {
+                          setRejectReason('');
+                          setRejectError('');
+                          setShowRejectDialog(true);
+                        }}
                         disabled={isProcessing}
                         className="rounded-lg bg-[#A12632] px-8 py-3 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50 cursor-pointer"
                       >
@@ -589,37 +594,10 @@ export default function MPPPendingRequests() {
                     </button>
                   )}
 
-                  {showRejectInput && (
-                    <div className="w-full">
-                      <textarea
-                        placeholder="Enter reason for rejection..."
-                        value={rejectReason}
-                        onChange={(e) => setRejectReason(e.target.value)}
-                        className="w-full p-3 border border-[#E3DEE0] rounded-lg mb-3 text-sm focus:border-[#7A1F3D] outline-none"
-                        rows={3}
-                      />
-                      <div className="flex gap-3">
-                        <button
-                          onClick={handleReject}
-                          disabled={isProcessing}
-                          className="rounded-lg bg-[#A12632] px-6 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50 cursor-pointer"
-                        >
-                          Confirm Reject
-                        </button>
-                        <button
-                          onClick={() => setShowRejectInput(false)}
-                          className="rounded-lg bg-gray-200 px-6 py-2 text-sm font-semibold text-[#1F1A1C] hover:bg-gray-300 cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
                   {(selectedRequest.status === CONFIRMED ||
                     selectedRequest.status === REJECTED ||
                     selectedRequest.status === CANCELLED ||
-                    selectedRequest.status === EXPIRED) && !showRejectInput && (
+                    selectedRequest.status === EXPIRED) && (
                     <button
                       onClick={() => setSelectedRequest(null)}
                       className="rounded-lg border border-[#7A1F3D] bg-white px-6 py-3 text-sm font-semibold text-[#7A1F3D] hover:bg-[#FAF3F6] cursor-pointer"
@@ -639,6 +617,127 @@ export default function MPPPendingRequests() {
           </div>
         )}
       </main>
+
+      {/* ── Reject Confirmation Dialog ─────────────────────────────── */}
+      {showRejectDialog && selectedRequest && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => {
+            if (!isProcessing) {
+              setShowRejectDialog(false);
+              setRejectError('');
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && !isProcessing) {
+              setShowRejectDialog(false);
+              setRejectError('');
+            }
+          }}
+          tabIndex={-1}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reject-dialog-title"
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-[#E3DEE0] bg-[#FAF9FA] p-5">
+              <div>
+                <h2 id="reject-dialog-title" className="text-lg font-bold text-[#1F1A1C]">
+                  Reject Booking Request
+                </h2>
+                <p className="mt-1 text-xs text-[#6B6468]">
+                  This will notify the applicant and release the slot.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isProcessing) return;
+                  setShowRejectDialog(false);
+                  setRejectError('');
+                }}
+                disabled={isProcessing}
+                className="rounded-full p-1 text-[#6B6468] hover:bg-white hover:text-[#A12632] disabled:opacity-50 cursor-pointer"
+                aria-label="Close"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5">
+              <div className="mb-4 rounded-lg border border-[#E3DEE0] bg-[#FAF9FA] p-3">
+                <p className="text-sm font-semibold text-[#1F1A1C]">
+                  {selectedRequest.profiles?.full_name} · {selectedRequest.venues?.venue_name}
+                </p>
+                <p className="mt-0.5 text-xs text-[#6B6468]">
+                  {formatDate(selectedRequest.start_time)}
+                  {selectedRequest.booking_type === 'daily'
+                    ? ' (Whole Day)'
+                    : `, ${formatTime(selectedRequest.start_time)} – ${formatTime(selectedRequest.end_time)}`}
+                </p>
+                <p className="mt-1 text-xs font-semibold text-[#7A1F3D]">
+                  RM {totalAmount.toFixed(2)}
+                </p>
+              </div>
+
+              <label htmlFor="reject-reason" className="mb-1 block text-xs font-semibold text-[#6B6468]">
+                Reason for rejection <span className="text-[#A12632]">*</span>
+              </label>
+              <textarea
+                id="reject-reason"
+                autoFocus
+                value={rejectReason}
+                onChange={(e) => {
+                  setRejectReason(e.target.value.slice(0, 500));
+                  if (rejectError) setRejectError('');
+                }}
+                placeholder="e.g. Venue already reserved for a faculty event on this date."
+                rows={5}
+                disabled={isProcessing}
+                className="w-full resize-none rounded-lg border border-[#E3DEE0] px-3 py-2 text-sm text-[#1F1A1C] outline-none focus:border-[#7A1F3D] disabled:bg-gray-50"
+              />
+              <div className="mt-1 flex items-center justify-between text-[11px]">
+                <span className={rejectError ? 'text-[#A12632]' : 'text-[#6B6468]'}>
+                  {rejectError || 'Minimum 10 characters'}
+                </span>
+                <span className="text-[#6B6468]">{rejectReason.length} / 500</span>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-3 border-t border-[#E3DEE0] bg-white p-4">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isProcessing) return;
+                  setShowRejectDialog(false);
+                  setRejectError('');
+                }}
+                disabled={isProcessing}
+                className="flex-1 rounded-lg border border-[#E3DEE0] bg-white py-2.5 text-sm font-semibold text-[#1F1A1C] hover:bg-gray-50 disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleReject}
+                disabled={isProcessing || rejectReason.trim().length < 10}
+                className="flex-1 rounded-lg bg-[#A12632] py-2.5 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+              >
+                {isProcessing ? 'Rejecting…' : 'Confirm Reject'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
     </div>
