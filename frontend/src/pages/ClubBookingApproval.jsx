@@ -11,6 +11,7 @@ export default function ClubBookingApproval() {
   const [searchParams] = useSearchParams();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const fileInputRef = useRef(null);
+  const ocrAbortRef = useRef(null);
 
   const venueId = searchParams.get('venueId');
   const dateParam = searchParams.get('date');
@@ -37,12 +38,17 @@ export default function ClubBookingApproval() {
   const [isScanning, setIsScanning] = useState(false);
   const [scanComplete, setScanComplete] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [ocrError, setOcrError] = useState('');
   
   const [eventDetails, setEventDetails] = useState({
     clubName: '',
     eventName: '',
     eventPurpose: ''
   });
+
+  const [ocrResult, setOcrResult] = useState(null);
+  const [ocrRawFields, setOcrRawFields] = useState({}); 
   
   const [attendees, setAttendees] = useState('1');
 
@@ -86,32 +92,86 @@ export default function ClubBookingApproval() {
     setFileName(uploadedFile.name);
     const objectUrl = URL.createObjectURL(uploadedFile);
     setPreviewUrl(objectUrl);
-    triggerAIPlaceholder(uploadedFile); 
+    runOcrOnFile(uploadedFile);
   };
 
-  const triggerAIPlaceholder = (uploadedFile) => {
-    setIsScanning(true);
-    setScanComplete(false);
-    setTimeout(() => {
+  const runOcrOnFile = async (uploadedFile) => {
+  
+  if (ocrAbortRef.current) ocrAbortRef.current.abort();
+  const controller = new AbortController();
+  ocrAbortRef.current = controller;
+
+  setIsScanning(true);
+  setScanComplete(false);
+  setOcrError('');
+  setOcrResult(null);
+
+  try {
+    const formData = new FormData();
+    formData.append('file', uploadedFile);
+
+    const res = await fetch(`${API}/api/ocr`, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    });
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `OCR failed (${res.status})`);
+
+    setOcrResult(body);
+
+    setEventDetails((prev) => ({
+      clubName:     body.clubName  ?? prev.clubName,
+      eventName:    body.eventName ?? prev.eventName,
+      eventPurpose: body.eventPurpose ?? prev.eventPurpose,
+    }));
+
+    if (body.attendees != null) setAttendees(String(body.attendees));
+
+    setOcrRawFields({
+      venue:     body.venue,
+      eventDate: body.eventDate,
+      eventTime: body.eventTime,
+      signatory: body.signatory,
+      eventPurpose: body.eventPurpose,
+    });
+
+    const allEmpty = ['clubName','eventName','eventDate','eventTime','venue','attendees','signatory']
+      .every(k => body[k] == null || body[k] === '');
+    if (allEmpty) {
+      setOcrError('We couldn\'t read any details from this letter. Please fill the form manually, or upload a clearer copy.');
+    }
+  } catch (err) {
+    
+    if (err.name === 'AbortError') return;
+    console.error('OCR error:', err);
+    setOcrError(err.message);
+  } finally {
+    
+    if (ocrAbortRef.current === controller) {
       setIsScanning(false);
       setScanComplete(true);
-      setEventDetails({
-        clubName: 'Computing Society',
-        eventName: 'Tech Talk: AI in Industry',
-        eventPurpose: 'Industry talk for students'
-      });
-    }, 2000);
-  };
+      ocrAbortRef.current = null;
+    }
+  }
+};
 
-  const removeFile = () => {
-    setFile(null);
-    setFileName('');
-    setPreviewUrl(null);
-    setScanComplete(false);
-    setFileError('');
-    setEventDetails({ clubName: '', eventName: '', eventPurpose: '' });
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
+const removeFile = () => {
+  if (ocrAbortRef.current) ocrAbortRef.current.abort();
+  ocrAbortRef.current = null; 
+  setFile(null);
+  setFileName('');
+  setPreviewUrl(null);
+  setScanComplete(false);
+  setFileError('');
+  setOcrError('');
+  setOcrResult(null);
+  setOcrRawFields({});
+  setEventDetails({ clubName: '', eventName: '', eventPurpose: '' });
+  if (fileInputRef.current) fileInputRef.current.value = '';
+  setIsScanning(false);
+};
 
   const handleDetailChange = (e) => {
     setEventDetails({ ...eventDetails, [e.target.name]: e.target.value });
@@ -297,6 +357,12 @@ export default function ClubBookingApproval() {
                       </div>
                     )}
                   </div>
+
+                  {ocrError && (
+                    <p className="mt-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+                      {ocrError}
+                    </p>
+                  )}
 
                   <p className="text-[13px] text-[#6B6468] mt-3 leading-relaxed">
                     Letter required for this venue. Extracted details are pre-filled for you to verify.

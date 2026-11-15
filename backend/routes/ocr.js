@@ -71,12 +71,14 @@ const EXTRACT_PROMPT = `Extract these fields from this approval letter. Return O
   "eventTime": "string or null",
   "venue": "string or null",
   "attendees": number or null,
-  "signatory": "string or null"
+  "signatory": "string or null",
+  "eventPurpose": "string or null"
 }
 
 Rules:
 - eventTime: return as "HH:MM – HH:MM" (24-hour clock, en dash). If the letter explicitly says it is a whole-day event or gives no specific times, return exactly "Whole Day".
 - venue: return the venue/place name exactly as written in the letter. Do not include address/city unless it is part of the venue name.
+- eventPurpose: return a SHORT one-to-two sentence summary (max ~150 chars) of the stated aim/objective of the event. Paraphrase if necessary. Do NOT copy the whole paragraph. Do NOT include logistics (date, time, venue, pax). Use null if no purpose is stated.
 - Use null when a field is not present. Do not invent or guess values.`;
 
 function parseExtracted(result) {
