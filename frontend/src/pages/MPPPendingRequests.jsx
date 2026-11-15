@@ -169,7 +169,28 @@ export default function MPPPendingRequests() {
   const effectiveOcr = ocrData || savedVerification?.extracted || null;
 
   const eq = (a, b) =>
-    String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+  String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+  
+  const normalizeTime = (s) => {
+  if (!s) return '';
+  const str = String(s).trim().toLowerCase();
+  if (str === 'whole day' || str === 'whole-day') return 'whole day';
+  const matches = str.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/g) || [];
+  return matches
+    .map((m) => {
+      const [, hStr, mStr, ap] = m.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/) || [];
+      if (!hStr) return null;
+      let h = Number(hStr);
+      const min = Number(mStr || 0);
+      const ampm = (ap || '').toLowerCase();
+      if (ampm === 'pm' && h < 12) h += 12;
+      if (ampm === 'am' && h === 12) h = 0;
+      return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+    })
+    .filter(Boolean)
+    .sort()
+    .join('–');
+  };
 
   const buildComparison = () => {
     if (!effectiveOcr) return [];
@@ -182,7 +203,7 @@ export default function MPPPendingRequests() {
       { key:'clubName',  label:'Club name', submitted:submittedClub,               ocr:effectiveOcr.clubName,  match:eq(effectiveOcr.clubName,  submittedClub) },
       { key:'eventName', label:'Event name',submitted:selectedRequest?.event_name, ocr:effectiveOcr.eventName, match:eq(effectiveOcr.eventName, selectedRequest?.event_name) },
       { key:'eventDate', label:'Event date',submitted:submittedDate,               ocr:effectiveOcr.eventDate, match:eq(effectiveOcr.eventDate, submittedDate) },
-      { key:'eventTime', label:'Time',      submitted:submittedTime,               ocr:effectiveOcr.eventTime, match:eq(effectiveOcr.eventTime, submittedTime) },
+      { key:'eventTime', label:'Time', submitted:submittedTime, ocr:effectiveOcr.eventTime, match: normalizeTime(effectiveOcr.eventTime) === normalizeTime(submittedTime) },
       { key:'venue',     label:'Venue',     submitted:submittedVenue,              ocr:effectiveOcr.venue,     match:eq(effectiveOcr.venue,     submittedVenue) },
       { key:'attendees', label:'Attendees', submitted:selectedRequest?.expected_attendees, ocr:effectiveOcr.attendees, match:Number(effectiveOcr.attendees) === Number(selectedRequest?.expected_attendees) },
       { key:'signatory', label:'Signatory', submitted:'—',                         ocr:effectiveOcr.signatory, match:!!effectiveOcr.signatory },
@@ -225,7 +246,7 @@ export default function MPPPendingRequests() {
           !eq(extracted.clubName,  submittedClub)  ||
           !eq(extracted.eventName, selectedRequest?.event_name) ||
           !eq(extracted.eventDate, submittedDate)  ||
-          !eq(extracted.eventTime, submittedTime)  ||
+          normalizeTime(extracted.eventTime) !== normalizeTime(submittedTime) ||
           !eq(extracted.venue,     submittedVenue) ||
           Number(extracted.attendees) !== Number(selectedRequest?.expected_attendees);
         setDecision(anyMismatch ? VERIFY_MISMATCH : VERIFY_MATCHED);
