@@ -323,7 +323,7 @@ export default function MPPPendingRequests() {
     }
     setIsProcessing(true);
     try {
-      const { error } = await supabase.rpc('approve_booking', {
+      const { error } = await supabase.rpc('approve_booking_with_capacity', {
         p_booking_id: selectedRequest.booking_id,
       });
       if (error) throw error;

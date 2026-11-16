@@ -38,6 +38,7 @@ export default function ClubBookingApproval() {
   const [isScanning, setIsScanning] = useState(false);
   const [scanComplete, setScanComplete] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const [ocrError, setOcrError] = useState('');
   
@@ -188,6 +189,7 @@ const removeFile = () => {
 
   const handleConfirmSubmit = async () => {
     setIsSubmitting(true);
+    setSubmitError('');
     setShowSummaryModal(false);
 
     try {
@@ -214,49 +216,45 @@ const removeFile = () => {
         publicUrl = url;
       }
 
-      let finalRate = 0;
-      let finalDeposit = 0;
-      
-      if (venue) {
-        if (bookingType === 'daily') {
-          const numDays = datesParam ? datesParam.split(',').length : 1;
-          finalRate = Number(venue.daily_rate || 0) * numDays;
-          finalDeposit = Number(venue.daily_deposit || 0);
-        } else {
-          const durationHours = Number(durationParam) || 1;
-          finalRate = Number(venue.hourly_rate || 0) * durationHours;
-          finalDeposit = Number(venue.hourly_deposit || 0);
-        }
+      const payload = {
+        venueId,
+        bookingType,
+        purpose: eventDetails.eventPurpose?.trim() || 'Club Event',
+        event_name: eventDetails.eventName?.trim() || null,
+        expected_attendees: Number(attendees),
+        start_time: startTime,
+        end_time: endTime,
+        approval_letter_url: publicUrl,
+      };
+
+      if (bookingType === 'daily') {
+        payload.dates = (datesParam || '').split(',').filter(Boolean);
       }
 
-      const { data: bookingData, error: insertError } = await supabase
-        .from('bookings')
-        .insert({
-          profile_id: session.user.id,
-          venue_id: venueId,
-          booking_type: bookingType,
-          purpose: eventDetails.eventPurpose || 'Club Event',
-          start_time: startTime,
-          end_time: endTime,
-          event_name: eventDetails.eventName,
-          date: dbDate, 
-          expected_attendees: Number(attendees), 
-          approval_letter_url: publicUrl, 
-          status: 'pending_approval',
-          quoted_rate: finalRate,
-          quoted_deposit: finalDeposit,
-        })
-        .select('booking_id')
-        .single();
+      const res = await fetch(`${API}/api/bookings/create-booking`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(payload),
+      });
 
-      if (insertError) throw insertError;
+      const body = await res.json().catch(() => ({}));
 
-      navigate(`/booking-request/success?bookingId=${bookingData.booking_id}`, { replace: true });
+      if (!res.ok) {
+        throw new Error(body.error || `Server responded ${res.status}`);
+      }
+
+      if (!body.booking?.booking_id) {
+        throw new Error('Server did not return a booking ID.');
+      }
+
+      navigate(`/booking-request/success?bookingId=${body.booking.booking_id}`, { replace: true });
       
     } catch (error) {
       console.error('Error submitting booking:', error);
-      alert('Failed to submit booking. ' + error.message);
-    } finally {
+      setSubmitError(error.message);
       setIsSubmitting(false);
     }
   };
@@ -315,6 +313,12 @@ const removeFile = () => {
             {venueName} · {formattedDate} · {timeLabel} · {rateLabel}
           </p>
         </div>
+
+        {submitError && (
+          <div className="mb-6 rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-sm text-[#7A1F3D]">
+            <strong>Could not submit:</strong> {submitError}
+          </div>
+        )}
 
         <div className={`grid grid-cols-1 ${requiresLetter ? 'xl:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]' : 'max-w-2xl mx-auto'} gap-6`}>
           
