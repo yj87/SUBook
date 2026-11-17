@@ -40,6 +40,38 @@ export default function ClubBookingApproval() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
+  // Normalise OCR status to English
+const normalizeStatus = (s) => {
+  if (!s) return null;
+  const up = String(s).trim().toUpperCase();
+  if (['APPROVED', 'DILULUSKAN', 'DILULUS', 'LULUS', 'APPROVED BY'].some((v) => up === v)) return 'APPROVED';
+  if (['PENDING', 'MENUNGGU', 'BELUM DILULUSKAN'].some((v) => up === v)) return 'PENDING';
+  if (['REJECTED', 'DITOLAK', 'GAGAL'].some((v) => up === v)) return 'REJECTED';
+  return up;
+};
+
+// Normalise time to a comparable format
+const normalizeTime = (s) => {
+  if (!s) return '';
+  const str = String(s).trim().toLowerCase();
+  if (str === 'whole day' || str === 'whole-day') return 'whole day';
+  const matches = str.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/g) || [];
+  return matches
+    .map((m) => {
+      const [, hStr, mStr, ap] = m.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/) || [];
+      if (!hStr) return null;
+      let h = Number(hStr);
+      const min = Number(mStr || 0);
+      const ampm = (ap || '').toLowerCase();
+      if (ampm === 'pm' && h < 12) h += 12;
+      if (ampm === 'am' && h === 12) h = 0;
+      return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+    })
+    .filter(Boolean)
+    .sort()
+    .join('–');
+};
+
   const [ocrError, setOcrError] = useState('');
   
   const [eventDetails, setEventDetails] = useState({
@@ -294,6 +326,55 @@ const removeFile = () => {
   
   const totalAmount = calculatedRental + displayDeposit;
 
+// Compare OCR-extracted details against the booking the rep is making
+const ocrWarnings = (() => {
+  if (!ocrResult) return [];
+  const warnings = [];
+
+  // 1. Approval status
+  const status = normalizeStatus(ocrResult.approvalStatus);
+  if (status && status !== 'APPROVED') {
+    warnings.push({
+      field: 'Approval status',
+      message: `The letter shows "${ocrResult.approvalStatus}" — not APPROVED. MPP will see this and may reject the request.`,
+    });
+  } else if (!status) {
+    warnings.push({
+      field: 'Approval status',
+      message: 'No approval status found in the letter. Please confirm with MPP.',
+      info: true,
+    });
+  }
+
+  // 2. Date mismatch (OCR date must match the booking's first date)
+  if (ocrResult.eventDate && rawDate && ocrResult.eventDate !== rawDate) {
+    warnings.push({
+      field: 'Date',
+      message: `You're booking ${formattedDate}, but the letter says ${ocrResult.eventDate}.`,
+    });
+  }
+
+  // 3. Time mismatch
+  if (ocrResult.eventTime && timeLabel !== '—') {
+    if (normalizeTime(ocrResult.eventTime) !== normalizeTime(timeLabel)) {
+      warnings.push({
+        field: 'Time',
+        message: `You're booking ${timeLabel}, but the letter says ${ocrResult.eventTime}.`,
+      });
+    }
+  }
+
+  // 4. Attendees mismatch
+  if (ocrResult.attendees != null && Number(attendees) !== Number(ocrResult.attendees)) {
+    warnings.push({
+      field: 'Attendees',
+      message: `The letter says ${ocrResult.attendees}, but you've entered ${attendees}. MPP will compare against the letter.`,
+    });
+  }
+
+  return warnings;
+})();
+
   return (
     <div className="min-h-screen bg-[#F6F4F5] font-inter text-[#1F1A1C]">
       <TopNavbar role="club_representative" onProfileOpen={setIsProfileOpen} />
@@ -368,6 +449,27 @@ const removeFile = () => {
                     </p>
                   )}
 
+                  {ocrWarnings.length > 0 && (
+                    <div className="mt-3 rounded-lg border border-yellow-300 bg-yellow-50 px-4 py-3">
+                      <p className="text-sm font-bold text-yellow-800">
+                        ⚠ The letter doesn't fully match your booking
+                      </p>
+                        <ul className="mt-2 space-y-1.5 text-xs text-yellow-800">
+                          {ocrWarnings.map((w, i) => (
+                            <li key={i} className="flex gap-1.5">
+                              <span className="shrink-0">•</span>
+                              <span>
+                                <strong>{w.field}:</strong> {w.message}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      <p className="mt-2 text-xs text-yellow-700 leading-relaxed">
+                        You can still submit — MPP will review this. If you're unsure, verify the letter you uploaded is correct.
+                      </p>
+                      </div>
+                  )}
+
                   <p className="text-[13px] text-[#6B6468] mt-3 leading-relaxed">
                     Letter required for this venue. Extracted details are pre-filled for you to verify.
                   </p>
@@ -427,8 +529,16 @@ const removeFile = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-xs font-semibold text-[#6B6468] mb-1">Event purpose</label>
-                  <input type="text" name="eventPurpose" value={eventDetails.eventPurpose} onChange={handleDetailChange} placeholder="Enter event purpose" className="w-full h-10 px-3 bg-white border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none" required />
+                <label className="block text-xs font-semibold text-[#6B6468] mb-1">Event purpose</label>
+                  <textarea
+                    name="eventPurpose"
+                    value={eventDetails.eventPurpose}
+                    onChange={handleDetailChange}
+                    placeholder="Enter event purpose"
+                    rows={3}
+                    className="w-full resize-none px-3 py-2 bg-white border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none"
+                    required
+                  />
                 </div>
               </div>
 
