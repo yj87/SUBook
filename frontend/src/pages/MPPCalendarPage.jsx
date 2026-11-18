@@ -7,7 +7,7 @@ import { assignOverlapLanes, dateKey, formatDate, formatTime, normalizeBooking }
 import { getBookingStatusStyle } from '../utils/bookingStatusStyles';
 import { supabase } from '../supabaseClient';
 
-const CALENDAR_VIEWS = ['monthly', 'weekly', 'daily', 'list'];
+const CALENDAR_VIEWS = ['monthly', 'weekly', 'daily'];
 const toMalaysiaDate = (value) => new Date(`${dateKey(value)}T00:00:00+08:00`);
 const addDays = (value, days) => {
   const result = new Date(value);
@@ -131,7 +131,7 @@ export default function MPPCalendarPage() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.access_token) throw new Error('Your admin session has expired. Please sign in again.');
-        const endpoint = view === 'list' ? `${API_BASE_URL}/api/bookings/management?scope=active&confirmed_only=true${venueId ? `&venue_id=${encodeURIComponent(venueId)}` : ''}` : `${API_BASE_URL}/api/bookings/calendar?start=${encodeURIComponent(range[0].toISOString())}&end=${encodeURIComponent(range[1].toISOString())}${venueId ? `&venue_id=${encodeURIComponent(venueId)}` : ''}`;
+        const endpoint = `${API_BASE_URL}/api/bookings/calendar?start=${encodeURIComponent(range[0].toISOString())}&end=${encodeURIComponent(range[1].toISOString())}${venueId ? `&venue_id=${encodeURIComponent(venueId)}` : ''}`;
         const response = await fetch(endpoint, { headers: { Authorization: `Bearer ${session.access_token}` } });
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || 'Unable to load bookings');
