@@ -414,10 +414,10 @@ router.post(
         });
       }
 
-      if (clubId) {
-        return res.status(501).json({
+      if (clubId && !isUUID(clubId)) {
+        return res.status(400).json({
           success: false,
-          error: 'Club booking authorization is not configured yet',
+          error: 'Invalid clubId',
         });
       }
 

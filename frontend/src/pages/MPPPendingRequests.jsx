@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import ProfileModal from '../components/ProfileModal';
 import MPPSidebar from '../components/MPPSidebar';
 import { supabase } from '../supabaseClient';
@@ -169,7 +169,28 @@ export default function MPPPendingRequests() {
   const effectiveOcr = ocrData || savedVerification?.extracted || null;
 
   const eq = (a, b) =>
-    String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+  String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+  
+  const normalizeTime = (s) => {
+  if (!s) return '';
+  const str = String(s).trim().toLowerCase();
+  if (str === 'whole day' || str === 'whole-day') return 'whole day';
+  const matches = str.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/g) || [];
+  return matches
+    .map((m) => {
+      const [, hStr, mStr, ap] = m.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/) || [];
+      if (!hStr) return null;
+      let h = Number(hStr);
+      const min = Number(mStr || 0);
+      const ampm = (ap || '').toLowerCase();
+      if (ampm === 'pm' && h < 12) h += 12;
+      if (ampm === 'am' && h === 12) h = 0;
+      return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+    })
+    .filter(Boolean)
+    .sort()
+    .join('–');
+  };
 
   const buildComparison = () => {
     if (!effectiveOcr) return [];
@@ -182,10 +203,11 @@ export default function MPPPendingRequests() {
       { key:'clubName',  label:'Club name', submitted:submittedClub,               ocr:effectiveOcr.clubName,  match:eq(effectiveOcr.clubName,  submittedClub) },
       { key:'eventName', label:'Event name',submitted:selectedRequest?.event_name, ocr:effectiveOcr.eventName, match:eq(effectiveOcr.eventName, selectedRequest?.event_name) },
       { key:'eventDate', label:'Event date',submitted:submittedDate,               ocr:effectiveOcr.eventDate, match:eq(effectiveOcr.eventDate, submittedDate) },
-      { key:'eventTime', label:'Time',      submitted:submittedTime,               ocr:effectiveOcr.eventTime, match:eq(effectiveOcr.eventTime, submittedTime) },
+      { key:'eventTime', label:'Time',      submitted:submittedTime,               ocr:effectiveOcr.eventTime, match:normalizeTime(effectiveOcr.eventTime) === normalizeTime(submittedTime) },
       { key:'venue',     label:'Venue',     submitted:submittedVenue,              ocr:effectiveOcr.venue,     match:eq(effectiveOcr.venue,     submittedVenue) },
       { key:'attendees', label:'Attendees', submitted:selectedRequest?.expected_attendees, ocr:effectiveOcr.attendees, match:Number(effectiveOcr.attendees) === Number(selectedRequest?.expected_attendees) },
       { key:'signatory', label:'Signatory', submitted:'—',                         ocr:effectiveOcr.signatory, match:!!effectiveOcr.signatory },
+      { key:'approvalStatus', label:'Approval status', submitted:'—',              ocr:effectiveOcr.approvalStatus, match: !!effectiveOcr.approvalStatus },
     ];
   };
 
@@ -225,7 +247,7 @@ export default function MPPPendingRequests() {
           !eq(extracted.clubName,  submittedClub)  ||
           !eq(extracted.eventName, selectedRequest?.event_name) ||
           !eq(extracted.eventDate, submittedDate)  ||
-          !eq(extracted.eventTime, submittedTime)  ||
+          normalizeTime(extracted.eventTime) !== normalizeTime(submittedTime) ||
           !eq(extracted.venue,     submittedVenue) ||
           Number(extracted.attendees) !== Number(selectedRequest?.expected_attendees);
         setDecision(anyMismatch ? VERIFY_MISMATCH : VERIFY_MATCHED);
@@ -302,7 +324,7 @@ export default function MPPPendingRequests() {
     }
     setIsProcessing(true);
     try {
-      const { error } = await supabase.rpc('approve_booking', {
+      const { error } = await supabase.rpc('approve_booking_with_capacity', {
         p_booking_id: selectedRequest.booking_id,
       });
       if (error) throw error;
@@ -677,18 +699,54 @@ export default function MPPPendingRequests() {
                             </div>
                             <div className="divide-y divide-[#E3DEE0]">
                               {fields.map(f => (
-                                <div key={f.key} className={`grid grid-cols-[90px_1.1fr_1.1fr_1fr_28px] gap-3 px-4 py-2.5 text-[13px] items-center ${f.match ? '' : 'bg-[#FFF9E6]'}`}>
-                                  <span className="font-medium text-[#6B6468]">{f.label}</span>
-                                  <span className="text-[#1F1A1C] truncate min-w-0" title={String(f.submitted)}>{String(f.submitted ?? '—')}</span>
-                                  <span className="text-[#1F1A1C] truncate min-w-0" title={String(f.ocr)}>{String(f.ocr ?? '—')}</span>
-                                  <input type="text"
-                                    value={reviewFields[f.key] ?? (f.ocr ?? '')}
-                                    onChange={(e) => handleReviewChange(f.key, e.target.value)}
-                                    className="w-full rounded border border-[#E3DEE0] bg-white px-2 py-1 text-[13px] outline-none focus:border-[#7A1F3D]" />
-                                  <span className={`text-center ${f.match ? 'text-[#17703A]' : 'text-[#D97706]'}`}>{f.match ? '✔' : '⚠'}</span>
+                                <Fragment key={f.key}>
+                                  <div className={`grid grid-cols-[90px_1.1fr_1.1fr_1fr_28px] gap-3 px-4 py-2.5 text-[13px] items-center ${f.match ? '' : 'bg-[#FFF9E6]'}`}>
+                                    <span className="font-medium text-[#6B6468]">{f.label}</span>
+                                    <span className="text-[#1F1A1C] truncate min-w-0" title={String(f.submitted)}>{String(f.submitted ?? '—')}</span>
+                                    <span className="text-[#1F1A1C] truncate min-w-0" title={String(f.ocr)}>{String(f.ocr ?? '—')}</span>
+                                    <input type="text"
+                                      value={reviewFields[f.key] ?? (f.ocr ?? '')}
+                                      onChange={(e) => handleReviewChange(f.key, e.target.value)}
+                                      className="w-full rounded border border-[#E3DEE0] bg-white px-2 py-1 text-[13px] outline-none focus:border-[#7A1F3D]" />
+                                      <span className={`text-center ${f.match ? 'text-[#17703A]' : 'text-[#D97706]'}`}>{f.match ? '✔' : '⚠'}</span>
+                                  </div>
+
+                              {/* Inline banner after the approvalStatus row */}
+                              {f.key === 'approvalStatus' && (() => {
+                                const status = String(f.ocr || '').trim().toUpperCase();
+                                const isApproved = ['APPROVED', 'DILULUSKAN', 'DILULUS', 'LULUS'].includes(status);
+
+                              if (!status) {
+                              return (
+                                <div className="px-4 py-3 bg-yellow-50 border-l-4 border-yellow-400">
+                                  <p className="text-sm font-bold text-yellow-800">
+                                    ℹ No approval status found in the letter
+                                  </p>
+                                  <p className="text-xs text-yellow-700 mt-1">
+                                    The letter doesn't state an explicit APPROVED status. Verify manually before approving.
+                                  </p>
                                 </div>
-                              ))}
-                            </div>
+                                );
+                              }
+
+                              if (!isApproved) {
+                                return (
+                                  <div className="px-4 py-3 bg-red-50 border-l-4 border-red-500">
+                                    <p className="text-sm font-bold text-red-800">
+                                      ⚠ Letter status is "{f.ocr}" — not APPROVED
+                                    </p>
+                                    <p className="text-xs text-red-700 mt-1">
+                                      Do NOT approve this booking until a valid APPROVED letter is provided.
+                                    </p>
+                                  </div>
+                                );
+                              }
+
+                              return null;
+                              })()}
+                              </Fragment>
+                            ))}
+                          </div>
                             <div className="border-t border-[#E3DEE0] bg-[#FAF9FA] px-4 py-2 text-[11px] text-[#6B6468]">
                               ✔ / ⚠ compares OCR against what the applicant submitted. The MPP Review column is for corrections only.
                             </div>
