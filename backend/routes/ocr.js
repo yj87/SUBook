@@ -79,7 +79,17 @@ const EXTRACT_PROMPT = `Extract these fields from this approval letter. Return O
 Rules:
 - LANGUAGE: Detect the language of the letter.
   - If the letter is already in English, DO NOT translate anything. Return field values exactly as written.
-  - If the letter is in Malay, translate text field values to English. Translate Malay common nouns (e.g. "Kelab Komputer" → "Computer Club", "Dewan Seminar" → "Seminar Hall"). DO NOT translate proper nouns (person names, place names, or the official club name as printed) — keep them as written.
+  - If the letter is in Malay, translate text field values to English.
+  - ALWAYS translate clubName and eventName to English, even if they are proper nouns. Examples:
+      "Persatuan Komputer UTM" → "UTM Computer Society"
+      "Bengkel Inovasi Teknologi 2026" → "Technology Innovation Workshop 2026"
+      "Kelab Sukan Universiti" → "University Sports Club"
+    Use natural English equivalents — do not just transliterate word-for-word.
+  - venue: translate to English if the letter is in Malay. Examples:
+      "Dewan Seminar" → "Seminar Hall"
+      "Dewan Sri Cempaka" → "Sri Cempaka Hall"
+    Keep proper place names that have no common English equivalent as-is.
+  - DO NOT translate person names (signatory). Keep signatory exactly as written.
 - eventTime: return as "HH:MM – HH:MM" (24-hour clock, en dash). If the letter explicitly says it is a whole-day event or gives no specific times, return exactly "Whole Day".
 - venue: return the venue/place name exactly as written in the letter, but if the letter is in Malay, translate the venue name to English. Do not include address/city unless it is part of the venue name.
 - eventPurpose: return a SHORT one-to-two sentence summary (max ~150 chars) of the stated aim/objective of the event. If the letter is in Malay, summarise in English; otherwise summarise in English as well (purpose should always be a brief English summary since it's user-facing). Do NOT copy the whole paragraph.
