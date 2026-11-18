@@ -112,19 +112,19 @@ router.get('/calendar', requireMPPAdmin, async (req, res) => {
 // GET /api/bookings/management
 // Return all booking lifecycle records for the MPP management list.
 router.get('/management', requireMPPAdmin, async (req, res) => {
-  const { scope = 'active', search = '', venue_id: venueId, confirmed_only: confirmedOnly } = req.query;
-  if (!['active', 'past'].includes(scope)) {
-    return res.status(400).json({ success: false, error: 'scope must be active or past' });
+  const { scope = 'all', search = '', venue_id: venueId, confirmed_only: confirmedOnly } = req.query;
+  if (!['active', 'past', 'all'].includes(scope)) {
+    return res.status(400).json({ success: false, error: 'scope must be active, past, or all' });
   }
 
   try {
     let query = supabase
       .from('bookings')
       .select(MANAGEMENT_BOOKING_SELECT)
-      .order('start_time', { ascending: scope === 'past' });
+      .order('start_time', { ascending: false });
 
     if (scope === 'active') query = query.gt('end_time', new Date().toISOString());
-    else query = query.lte('end_time', new Date().toISOString());
+    else if (scope === 'past') query = query.lte('end_time', new Date().toISOString());
     if (confirmedOnly === 'true') query = query.eq('status', 'confirmed');
     if (venueId) query = query.eq('venue_id', venueId);
     if (search.trim()) query = query.ilike('booking_ref', `%${search.trim()}%`);
