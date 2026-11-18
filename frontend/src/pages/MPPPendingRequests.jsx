@@ -677,6 +677,7 @@ export default function MPPPendingRequests() {
                       {ocrError && (
                         <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{ocrError}</p>
                       )}
+
                       {/* Comparison table — only when there's OCR data (fresh or saved) */}
 {effectiveOcr && decision !== VERIFY_UNREADABLE && (() => {
   const fields = buildComparison();
@@ -700,36 +701,71 @@ export default function MPPPendingRequests() {
         {fields.map(f => {
           const editedValue = reviewFields[f.key] ?? (f.ocr ?? '');
           const isEdited = reviewFields[f.key] !== undefined && reviewFields[f.key] !== (f.ocr ?? '');
-          // Re-evaluate match based on the edited value (if edited) or OCR value
           const currentMatch = isEdited
             ? eq(editedValue, f.submitted)
             : f.match;
           return (
-            <div key={f.key} className={`grid grid-cols-[90px_1.1fr_1.4fr_28px] gap-3 px-4 py-2.5 text-[13px] items-center ${currentMatch ? '' : 'bg-[#FFF9E6]'}`}>
-              <span className="font-medium text-[#6B6468]">{f.label}</span>
-              <span className="text-[#1F1A1C] truncate min-w-0" title={String(f.submitted)}>{String(f.submitted ?? '—')}</span>
-              <div className="relative">
-                <input type="text"
-                  value={editedValue}
-                  onChange={(e) => handleReviewChange(f.key, e.target.value)}
-                  placeholder={f.ocr ?? ''}
-                  title={isEdited ? `OCR was: ${f.ocr ?? '—'}` : String(f.ocr ?? '—')}
-                  className={`w-full rounded border px-2 py-1 text-[13px] outline-none focus:border-[#7A1F3D] ${
-                    isEdited ? 'border-[#7A1F3D] bg-[#F6E9EE]' : 'border-[#E3DEE0] bg-white'
-                  }`} />
-                {isEdited && (
-                  <button
-                    type="button"
-                    onClick={() => handleReviewChange(f.key, undefined)}
-                    title="Reset to OCR value"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] text-[#7A1F3D] hover:text-[#651830] cursor-pointer px-1"
-                  >
-                    ↺
-                  </button>
-                )}
+            <Fragment key={f.key}>
+              <div className={`grid grid-cols-[90px_1.1fr_1.4fr_28px] gap-3 px-4 py-2.5 text-[13px] items-center ${currentMatch ? '' : 'bg-[#FFF9E6]'}`}>
+                <span className="font-medium text-[#6B6468]">{f.label}</span>
+                <span className="text-[#1F1A1C] truncate min-w-0" title={String(f.submitted)}>{String(f.submitted ?? '—')}</span>
+                <div className="relative">
+                  <input type="text"
+                    value={editedValue}
+                    onChange={(e) => handleReviewChange(f.key, e.target.value)}
+                    placeholder={f.ocr ?? ''}
+                    title={isEdited ? `OCR was: ${f.ocr ?? '—'}` : String(f.ocr ?? '—')}
+                    className={`w-full rounded border px-2 py-1 pr-7 text-[13px] outline-none focus:border-[#7A1F3D] ${
+                      isEdited ? 'border-[#7A1F3D] bg-[#F6E9EE]' : 'border-[#E3DEE0] bg-white'
+                    }`} />
+                  {isEdited && (
+                    <button
+                      type="button"
+                      onClick={() => handleReviewChange(f.key, undefined)}
+                      title="Reset to OCR value"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 text-[11px] text-[#7A1F3D] hover:text-[#651830] cursor-pointer px-1"
+                    >
+                      ↺
+                    </button>
+                  )}
+                </div>
+                <span className={`text-center ${currentMatch ? 'text-[#17703A]' : 'text-[#D97706]'}`}>{currentMatch ? '✔' : '⚠'}</span>
               </div>
-              <span className={`text-center ${currentMatch ? 'text-[#17703A]' : 'text-[#D97706]'}`}>{currentMatch ? '✔' : '⚠'}</span>
-            </div>
+
+              {/* Inline banner after the approvalStatus row */}
+              {f.key === 'approvalStatus' && (() => {
+                const status = String(f.ocr || '').trim().toUpperCase();
+                const isApproved = ['APPROVED', 'DILULUSKAN', 'DILULUS', 'LULUS'].includes(status);
+
+                if (!status) {
+                  return (
+                    <div className="px-4 py-3 bg-yellow-50 border-l-4 border-yellow-400">
+                      <p className="text-sm font-bold text-yellow-800">
+                        ℹ No approval status found in the letter
+                      </p>
+                      <p className="text-xs text-yellow-700 mt-1">
+                        The letter doesn't state an explicit APPROVED status. Verify manually before approving.
+                      </p>
+                    </div>
+                  );
+                }
+
+                if (!isApproved) {
+                  return (
+                    <div className="px-4 py-3 bg-red-50 border-l-4 border-red-500">
+                      <p className="text-sm font-bold text-red-800">
+                        ⚠ Letter status is "{f.ocr}" — not APPROVED
+                      </p>
+                      <p className="text-xs text-red-700 mt-1">
+                        Do NOT approve this booking until a valid APPROVED letter is provided.
+                      </p>
+                    </div>
+                  );
+                }
+
+                return null;
+              })()}
+            </Fragment>
           );
         })}
       </div>
@@ -739,7 +775,6 @@ export default function MPPPendingRequests() {
     </div>
   );
 })()}
-
                       {/* Inline verification — only when there's OCR data (fresh or saved) */}
                       {effectiveOcr && (
                         <div className="rounded-xl border border-[#E3DEE0] bg-white p-4 space-y-3">
