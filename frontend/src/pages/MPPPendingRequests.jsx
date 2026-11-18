@@ -463,7 +463,7 @@ export default function MPPPendingRequests() {
   };
 
   return (
-    <div className="flex h-screen bg-[#F6F4F5] overflow-hidden relative">
+    <div className="flex min-h-screen bg-[#F6F4F5] md:h-screen md:overflow-hidden relative">
       <MPPSidebar
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}
