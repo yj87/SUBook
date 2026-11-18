@@ -11,6 +11,7 @@ export default function ClubBookingApproval() {
   const [searchParams] = useSearchParams();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const fileInputRef = useRef(null);
+  const ocrAbortRef = useRef(null);
 
   const venueId = searchParams.get('venueId');
   const dateParam = searchParams.get('date');
@@ -37,12 +38,50 @@ export default function ClubBookingApproval() {
   const [isScanning, setIsScanning] = useState(false);
   const [scanComplete, setScanComplete] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+
+  // Normalise OCR status to English
+const normalizeStatus = (s) => {
+  if (!s) return null;
+  const up = String(s).trim().toUpperCase();
+  if (['APPROVED', 'DILULUSKAN', 'DILULUS', 'LULUS', 'APPROVED BY'].some((v) => up === v)) return 'APPROVED';
+  if (['PENDING', 'MENUNGGU', 'BELUM DILULUSKAN'].some((v) => up === v)) return 'PENDING';
+  if (['REJECTED', 'DITOLAK', 'GAGAL'].some((v) => up === v)) return 'REJECTED';
+  return up;
+};
+
+// Normalise time to a comparable format
+const normalizeTime = (s) => {
+  if (!s) return '';
+  const str = String(s).trim().toLowerCase();
+  if (str === 'whole day' || str === 'whole-day') return 'whole day';
+  const matches = str.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/g) || [];
+  return matches
+    .map((m) => {
+      const [, hStr, mStr, ap] = m.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/) || [];
+      if (!hStr) return null;
+      let h = Number(hStr);
+      const min = Number(mStr || 0);
+      const ampm = (ap || '').toLowerCase();
+      if (ampm === 'pm' && h < 12) h += 12;
+      if (ampm === 'am' && h === 12) h = 0;
+      return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+    })
+    .filter(Boolean)
+    .sort()
+    .join('–');
+};
+
+  const [ocrError, setOcrError] = useState('');
   
   const [eventDetails, setEventDetails] = useState({
     clubName: '',
     eventName: '',
     eventPurpose: ''
   });
+
+  const [ocrResult, setOcrResult] = useState(null);
+  const [ocrRawFields, setOcrRawFields] = useState({}); 
   
   const [attendees, setAttendees] = useState('1');
 
@@ -86,32 +125,86 @@ export default function ClubBookingApproval() {
     setFileName(uploadedFile.name);
     const objectUrl = URL.createObjectURL(uploadedFile);
     setPreviewUrl(objectUrl);
-    triggerAIPlaceholder(uploadedFile); 
+    runOcrOnFile(uploadedFile);
   };
 
-  const triggerAIPlaceholder = (uploadedFile) => {
-    setIsScanning(true);
-    setScanComplete(false);
-    setTimeout(() => {
+  const runOcrOnFile = async (uploadedFile) => {
+  
+  if (ocrAbortRef.current) ocrAbortRef.current.abort();
+  const controller = new AbortController();
+  ocrAbortRef.current = controller;
+
+  setIsScanning(true);
+  setScanComplete(false);
+  setOcrError('');
+  setOcrResult(null);
+
+  try {
+    const formData = new FormData();
+    formData.append('file', uploadedFile);
+
+    const res = await fetch(`${API}/api/ocr`, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    });
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `OCR failed (${res.status})`);
+
+    setOcrResult(body);
+
+    setEventDetails((prev) => ({
+      clubName:     body.clubName  ?? prev.clubName,
+      eventName:    body.eventName ?? prev.eventName,
+      eventPurpose: body.eventPurpose ?? prev.eventPurpose,
+    }));
+
+    if (body.attendees != null) setAttendees(String(body.attendees));
+
+    setOcrRawFields({
+      venue:     body.venue,
+      eventDate: body.eventDate,
+      eventTime: body.eventTime,
+      signatory: body.signatory,
+      eventPurpose: body.eventPurpose,
+    });
+
+    const allEmpty = ['clubName','eventName','eventDate','eventTime','venue','attendees','signatory']
+      .every(k => body[k] == null || body[k] === '');
+    if (allEmpty) {
+      setOcrError('We couldn\'t read any details from this letter. Please fill the form manually, or upload a clearer copy.');
+    }
+  } catch (err) {
+    
+    if (err.name === 'AbortError') return;
+    console.error('OCR error:', err);
+    setOcrError(err.message);
+  } finally {
+    
+    if (ocrAbortRef.current === controller) {
       setIsScanning(false);
       setScanComplete(true);
-      setEventDetails({
-        clubName: 'Computing Society',
-        eventName: 'Tech Talk: AI in Industry',
-        eventPurpose: 'Industry talk for students'
-      });
-    }, 2000);
-  };
+      ocrAbortRef.current = null;
+    }
+  }
+};
 
-  const removeFile = () => {
-    setFile(null);
-    setFileName('');
-    setPreviewUrl(null);
-    setScanComplete(false);
-    setFileError('');
-    setEventDetails({ clubName: '', eventName: '', eventPurpose: '' });
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
+const removeFile = () => {
+  if (ocrAbortRef.current) ocrAbortRef.current.abort();
+  ocrAbortRef.current = null; 
+  setFile(null);
+  setFileName('');
+  setPreviewUrl(null);
+  setScanComplete(false);
+  setFileError('');
+  setOcrError('');
+  setOcrResult(null);
+  setOcrRawFields({});
+  setEventDetails({ clubName: '', eventName: '', eventPurpose: '' });
+  if (fileInputRef.current) fileInputRef.current.value = '';
+  setIsScanning(false);
+};
 
   const handleDetailChange = (e) => {
     setEventDetails({ ...eventDetails, [e.target.name]: e.target.value });
@@ -128,6 +221,7 @@ export default function ClubBookingApproval() {
 
   const handleConfirmSubmit = async () => {
     setIsSubmitting(true);
+    setSubmitError('');
     setShowSummaryModal(false);
 
     try {
@@ -154,49 +248,45 @@ export default function ClubBookingApproval() {
         publicUrl = url;
       }
 
-      let finalRate = 0;
-      let finalDeposit = 0;
-      
-      if (venue) {
-        if (bookingType === 'daily') {
-          const numDays = datesParam ? datesParam.split(',').length : 1;
-          finalRate = Number(venue.daily_rate || 0) * numDays;
-          finalDeposit = Number(venue.daily_deposit || 0);
-        } else {
-          const durationHours = Number(durationParam) || 1;
-          finalRate = Number(venue.hourly_rate || 0) * durationHours;
-          finalDeposit = Number(venue.hourly_deposit || 0);
-        }
+      const payload = {
+        venueId,
+        bookingType,
+        purpose: eventDetails.eventPurpose?.trim() || 'Club Event',
+        event_name: eventDetails.eventName?.trim() || null,
+        expected_attendees: Number(attendees),
+        start_time: startTime,
+        end_time: endTime,
+        approval_letter_url: publicUrl,
+      };
+
+      if (bookingType === 'daily') {
+        payload.dates = (datesParam || '').split(',').filter(Boolean);
       }
 
-      const { data: bookingData, error: insertError } = await supabase
-        .from('bookings')
-        .insert({
-          profile_id: session.user.id,
-          venue_id: venueId,
-          booking_type: bookingType,
-          purpose: eventDetails.eventPurpose || 'Club Event',
-          start_time: startTime,
-          end_time: endTime,
-          event_name: eventDetails.eventName,
-          date: dbDate, 
-          expected_attendees: Number(attendees), 
-          approval_letter_url: publicUrl, 
-          status: 'pending_approval',
-          quoted_rate: finalRate,
-          quoted_deposit: finalDeposit,
-        })
-        .select('booking_id')
-        .single();
+      const res = await fetch(`${API}/api/bookings/create-booking`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(payload),
+      });
 
-      if (insertError) throw insertError;
+      const body = await res.json().catch(() => ({}));
 
-      navigate(`/booking-request/success?bookingId=${bookingData.booking_id}`, { replace: true });
+      if (!res.ok) {
+        throw new Error(body.error || `Server responded ${res.status}`);
+      }
+
+      if (!body.booking?.booking_id) {
+        throw new Error('Server did not return a booking ID.');
+      }
+
+      navigate(`/booking-request/success?bookingId=${body.booking.booking_id}`, { replace: true });
       
     } catch (error) {
       console.error('Error submitting booking:', error);
-      alert('Failed to submit booking. ' + error.message);
-    } finally {
+      setSubmitError(error.message);
       setIsSubmitting(false);
     }
   };
@@ -236,6 +326,55 @@ export default function ClubBookingApproval() {
   
   const totalAmount = calculatedRental + displayDeposit;
 
+// Compare OCR-extracted details against the booking the rep is making
+const ocrWarnings = (() => {
+  if (!ocrResult) return [];
+  const warnings = [];
+
+  // 1. Approval status
+  const status = normalizeStatus(ocrResult.approvalStatus);
+  if (status && status !== 'APPROVED') {
+    warnings.push({
+      field: 'Approval status',
+      message: `The letter shows "${ocrResult.approvalStatus}" — not APPROVED. MPP will see this and may reject the request.`,
+    });
+  } else if (!status) {
+    warnings.push({
+      field: 'Approval status',
+      message: 'No approval status found in the letter. Please confirm with MPP.',
+      info: true,
+    });
+  }
+
+  // 2. Date mismatch (OCR date must match the booking's first date)
+  if (ocrResult.eventDate && rawDate && ocrResult.eventDate !== rawDate) {
+    warnings.push({
+      field: 'Date',
+      message: `You're booking ${formattedDate}, but the letter says ${ocrResult.eventDate}.`,
+    });
+  }
+
+  // 3. Time mismatch
+  if (ocrResult.eventTime && timeLabel !== '—') {
+    if (normalizeTime(ocrResult.eventTime) !== normalizeTime(timeLabel)) {
+      warnings.push({
+        field: 'Time',
+        message: `You're booking ${timeLabel}, but the letter says ${ocrResult.eventTime}.`,
+      });
+    }
+  }
+
+  // 4. Attendees mismatch
+  if (ocrResult.attendees != null && Number(attendees) !== Number(ocrResult.attendees)) {
+    warnings.push({
+      field: 'Attendees',
+      message: `The letter says ${ocrResult.attendees}, but you've entered ${attendees}. MPP will compare against the letter.`,
+    });
+  }
+
+  return warnings;
+})();
+
   return (
     <div className="min-h-screen bg-[#F6F4F5] font-inter text-[#1F1A1C]">
       <TopNavbar role="club_representative" onProfileOpen={setIsProfileOpen} />
@@ -255,6 +394,12 @@ export default function ClubBookingApproval() {
             {venueName} · {formattedDate} · {timeLabel} · {rateLabel}
           </p>
         </div>
+
+        {submitError && (
+          <div className="mb-6 rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-sm text-[#7A1F3D]">
+            <strong>Could not submit:</strong> {submitError}
+          </div>
+        )}
 
         <div className={`grid grid-cols-1 ${requiresLetter ? 'xl:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]' : 'max-w-2xl mx-auto'} gap-6`}>
           
@@ -297,6 +442,33 @@ export default function ClubBookingApproval() {
                       </div>
                     )}
                   </div>
+
+                  {ocrError && (
+                    <p className="mt-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+                      {ocrError}
+                    </p>
+                  )}
+
+                  {ocrWarnings.length > 0 && (
+                    <div className="mt-3 rounded-lg border border-yellow-300 bg-yellow-50 px-4 py-3">
+                      <p className="text-sm font-bold text-yellow-800">
+                        ⚠ The letter doesn't fully match your booking
+                      </p>
+                        <ul className="mt-2 space-y-1.5 text-xs text-yellow-800">
+                          {ocrWarnings.map((w, i) => (
+                            <li key={i} className="flex gap-1.5">
+                              <span className="shrink-0">•</span>
+                              <span>
+                                <strong>{w.field}:</strong> {w.message}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      <p className="mt-2 text-xs text-yellow-700 leading-relaxed">
+                        You can still submit — MPP will review this. If you're unsure, verify the letter you uploaded is correct.
+                      </p>
+                      </div>
+                  )}
 
                   <p className="text-[13px] text-[#6B6468] mt-3 leading-relaxed">
                     Letter required for this venue. Extracted details are pre-filled for you to verify.
@@ -357,8 +529,16 @@ export default function ClubBookingApproval() {
                 </div>
                 
                 <div>
-                  <label className="block text-xs font-semibold text-[#6B6468] mb-1">Event purpose</label>
-                  <input type="text" name="eventPurpose" value={eventDetails.eventPurpose} onChange={handleDetailChange} placeholder="Enter event purpose" className="w-full h-10 px-3 bg-white border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none" required />
+                <label className="block text-xs font-semibold text-[#6B6468] mb-1">Event purpose</label>
+                  <textarea
+                    name="eventPurpose"
+                    value={eventDetails.eventPurpose}
+                    onChange={handleDetailChange}
+                    placeholder="Enter event purpose"
+                    rows={3}
+                    className="w-full resize-none px-3 py-2 bg-white border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none"
+                    required
+                  />
                 </div>
               </div>
 
