@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import ProfileModal from '../components/ProfileModal';
 import MPPSidebar from '../components/MPPSidebar';
 import { supabase } from '../supabaseClient';
@@ -26,6 +27,8 @@ const DEADLINE_FORMATTER = new Intl.DateTimeFormat('en-MY', {
 });
 
 export default function MPPPendingRequests() {
+  const location = useLocation();
+  const targetBookingId = location.state?.bookingId;
   console.log('[RENDER] MPPPendingRequests mounted at', window.location.pathname);
   const [requests, setRequests] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
@@ -109,12 +112,18 @@ export default function MPPPendingRequests() {
 
         if (!cancelled) {
           setRequests(data || []);
-          
-          // Auto-select the first PENDING request if it exists
-          if (data && data.length > 0) {
-            const firstPending = data.find(r => r.status === PENDING);
-            setSelectedRequest(firstPending || data[0]);
-          }
+
+          // Select the booking passed from All Bookings
+          const targetRequest = data?.find(
+            (r) => String(r.booking_id) === String(targetBookingId)
+          );
+
+          // If no target booking is found, use the existing default selection
+          const firstPending = data?.find(r => r.status === PENDING);
+
+          setSelectedRequest(
+            targetRequest || firstPending || data?.[0] || null
+          );
         }
       } catch (err) {
         if (!cancelled) setError(err.message);
@@ -124,7 +133,7 @@ export default function MPPPendingRequests() {
     };
     fetchRequests();
     return () => { cancelled = true; };
-  }, []);
+  }, [targetBookingId]);
 
   // Reset transient UI when the selected booking changes.
   useEffect(() => {
