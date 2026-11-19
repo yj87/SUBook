@@ -9,15 +9,85 @@ import { supabase } from '../supabaseClient';
 
 const PAGE_SIZE = 5;
 
-function BookingDetails({ booking, onClose }) {
+
+function BookingDetails({ booking, onClose, onGoToApproval }) {
   if (!booking) return null;
+
   const status = getBookingStatusStyle(booking.status);
-  return <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40 p-4" role="presentation" onMouseDown={onClose}>
-    <section className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
-      <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-[#7A1F3D]">Booking details</p><h2 className="mt-1 text-lg font-bold text-[#1F1A1C]">{booking.title}</h2></div><button type="button" onClick={onClose} className="text-2xl leading-none text-[#6B6468]" aria-label="Close booking details">&times;</button></div>
-      <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 text-sm"><dt className="font-semibold text-[#6B6468]">Booking Reference</dt><dd className="break-words font-mono text-[#1F1A1C]">{booking.booking_ref || '—'}</dd><dt className="font-semibold text-[#6B6468]">Venue</dt><dd className="text-[#1F1A1C]">{booking.venueName}</dd><dt className="font-semibold text-[#6B6468]">Date</dt><dd className="text-[#1F1A1C]">{formatDate(booking.start)}</dd><dt className="font-semibold text-[#6B6468]">Time</dt><dd className="text-[#1F1A1C]">{booking.type === 'daily' ? 'Full day' : `${formatTime(booking.start)} – ${formatTime(booking.end)}`}</dd><dt className="font-semibold text-[#6B6468]">Status</dt><dd className="font-semibold text-[#1F1A1C]"><span className={`mr-2 inline-block h-2 w-2 rounded-full ${status.dot}`} />{status.label}</dd></dl>
-    </section>
-  </div>;
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40 p-4"
+      role="presentation"
+      onMouseDown={onClose}
+    >
+      <section
+        className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#7A1F3D]">
+              Booking details
+            </p>
+            <h2 className="mt-1 text-lg font-bold text-[#1F1A1C]">
+              {booking.title}
+            </h2>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-2xl leading-none text-[#6B6468]"
+            aria-label="Close booking details"
+          >
+            &times;
+          </button>
+        </div>
+
+        <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 text-sm">
+          <dt className="font-semibold text-[#6B6468]">Booking Reference</dt>
+          <dd className="break-words font-mono text-[#1F1A1C]">
+            {booking.booking_ref || '—'}
+          </dd>
+
+          <dt className="font-semibold text-[#6B6468]">Venue</dt>
+          <dd className="text-[#1F1A1C]">{booking.venueName}</dd>
+
+          <dt className="font-semibold text-[#6B6468]">Date</dt>
+          <dd className="text-[#1F1A1C]">{formatDate(booking.start)}</dd>
+
+          <dt className="font-semibold text-[#6B6468]">Time</dt>
+          <dd className="text-[#1F1A1C]">
+            {booking.type === 'daily'
+              ? 'Full day'
+              : `${formatTime(booking.start)} – ${formatTime(booking.end)}`}
+          </dd>
+
+          <dt className="font-semibold text-[#6B6468]">Status</dt>
+          <dd className="font-semibold text-[#1F1A1C]">
+            <span className={`mr-2 inline-block h-2 w-2 rounded-full ${status.dot}`} />
+            {status.label}
+          </dd>
+        </dl>
+
+        {/* Action button for pending approval bookings */}
+        {booking.status === 'pending_approval' && (
+          <div className="mt-6 border-t border-[#EEE8EA] pt-4">
+            <button
+              type="button"
+              onClick={() => onGoToApproval(booking)}
+              className="w-full rounded-lg bg-[#7A1F3D] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#64182F]"
+            >
+              Go to Approval Page
+            </button>
+          </div>
+        )}
+      </section>
+    </div>
+  );
 }
 
 function statusLabel(status) {
@@ -147,5 +217,17 @@ export default function MPPAllBookingsPage() {
       </button>
     </div>
   </div></div>}
-  </main><ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} /><BookingDetails booking={selected} onClose={() => setSelected(null)} /></div>;
+  </main><ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
+    <BookingDetails
+      booking={selected}
+      onClose={() => setSelected(null)}
+      onGoToApproval={(booking) => {
+      setSelected(null);
+      navigate('/mpp-dashboard/requests', {
+        state: { bookingId: booking.booking_id },
+      });
+      }}
+    />
+
+    </div>;
 }
