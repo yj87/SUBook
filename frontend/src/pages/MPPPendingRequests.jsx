@@ -47,6 +47,7 @@ export default function MPPPendingRequests() {
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectError, setRejectError] = useState('');
+  const [toast, setToast] = useState(null);
 
   // OCR — fresh run only. Saved values are read from the DB row (ocr_verifications[0]).
   const [ocrData, setOcrData] = useState(null);
@@ -259,20 +260,30 @@ export default function MPPPendingRequests() {
     }
   };
 
-  // ── Save verification — UPSERT one row per booking ────────────────
-  const handleSaveVerification = async () => {
+    // ── Save verification — UPSERT one row per booking ────────────────
+    const handleSaveVerification = async () => {
     if (!selectedRequest) return;
 
-    const fields = buildComparison();
+    const fields = buildComparison().map(f => {
+    const editedValue = reviewFields[f.key];
+    const isEdited = editedValue !== undefined && editedValue !== (f.ocr ?? '');
+    const effectiveOcr = isEdited ? editedValue : f.ocr;
+    const match = isEdited
+    ? (f.key === 'eventTime'
+        ? normalizeTime(effectiveOcr) === normalizeTime(f.submitted)
+        : eq(effectiveOcr, f.submitted))
+      : f.match;
+      return { ...f, ocr: effectiveOcr, match };
+    });
     const mismatchRows = fields
-      .filter(f => !f.match)
-      .map(f => ({ field: f.key, submitted: f.submitted ?? null, ocr: f.ocr ?? null }));
+    .filter(f => !f.match)
+    .map(f => ({ field: f.key, submitted: f.submitted ?? null, ocr: f.ocr ?? null }));
 
-    const autoStatus = mismatchRows.length > 0 ? VERIFY_MISMATCH : VERIFY_MATCHED;
-    const status = decision || autoStatus;
+      const autoStatus = mismatchRows.length > 0 ? VERIFY_MISMATCH : VERIFY_MATCHED;
+      const status = decision || autoStatus;
 
-    if ((status === VERIFY_MISMATCH || status === VERIFY_UNREADABLE) && remarks.trim().length < 10) {
-      setVerificationError(`Please explain the ${status === VERIFY_UNREADABLE ? 'unreadable document' : 'mismatch'} (min 10 characters).`);
+      if ((status === VERIFY_MISMATCH || status === VERIFY_UNREADABLE) && remarks.trim().length < 10) {
+        setVerificationError(`Please explain the ${status === VERIFY_UNREADABLE ? 'unreadable document' : 'mismatch'} (min 10 characters).`);
       return;
     }
 
@@ -329,15 +340,16 @@ export default function MPPPendingRequests() {
       });
       if (error) throw error;
       
-      const patch = { status: AWAITING_PAYMENT };
-      setRequests(prev => prev.map(r =>
-        r.booking_id === selectedRequest.booking_id ? { ...r, ...patch } : r));
-      setSelectedRequest(prev => ({ ...prev, ...patch }));
-      
-      // Deselect to clear the right panel and hide it from pending list
-      setSelectedRequest(null);
+      const remaining = requests.filter(r => r.booking_id !== selectedRequest.booking_id);
+      setRequests(remaining);
+      setSelectedRequest(remaining.length > 0 ? remaining[0] : null);
+      showToast(
+        remaining.length > 0
+          ? 'Booking approved. Moving to next request.'
+          : 'Booking approved. No more active requests.'
+      );
     } catch (err) {
-      alert('Error approving: ' + err.message);
+      showToast('Error approving: ' + err.message, 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -352,22 +364,23 @@ export default function MPPPendingRequests() {
     setRejectError('');
     setIsProcessing(true);
     try {
-      const { data, error } = await supabase.rpc('reject_booking', {
+        const { data, error } = await supabase.rpc('reject_booking', {
         p_booking_id: selectedRequest.booking_id,
         p_reason: trimmed,
       });
       if (error) throw error;
       
-      const patch = { status: REJECTED, rejection_reason: data.rejection_reason ?? trimmed };
-      setRequests(prev => prev.map(r =>
-        r.booking_id === selectedRequest.booking_id ? { ...r, ...patch } : r));
-      setSelectedRequest(prev => ({ ...prev, ...patch }));
+      const remaining = requests.filter(r => r.booking_id !== selectedRequest.booking_id);
+      setRequests(remaining);
+      setSelectedRequest(remaining.length > 0 ? remaining[0] : null);
       
       setShowRejectDialog(false);
       setRejectReason('');
-      
-      // Deselect to clear the right panel
-      setSelectedRequest(null);
+      showToast(
+        remaining.length > 0
+          ? 'Booking rejected. Moving to next request.'
+          : 'Booking rejected. No more active requests.'
+      );
     } catch (err) {
       setRejectError(err.message);
     } finally {
@@ -377,6 +390,11 @@ export default function MPPPendingRequests() {
 
   const handleReviewChange = (key, value) =>
     setReviewFields(prev => ({ ...prev, [key]: value }));
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   // ── Filters ───────────────────────────────────────────────────────
   const filteredAndSortedRequests = requests
@@ -704,7 +722,9 @@ export default function MPPPendingRequests() {
           const editedValue = reviewFields[f.key] ?? (f.ocr ?? '');
           const isEdited = reviewFields[f.key] !== undefined && reviewFields[f.key] !== (f.ocr ?? '');
           const currentMatch = isEdited
-            ? eq(editedValue, f.submitted)
+            ? (f.key === 'eventTime'
+              ? normalizeTime(editedValue) === normalizeTime(f.submitted)
+              : eq(editedValue, f.submitted))
             : f.match;
           return (
             <Fragment key={f.key}>
@@ -953,6 +973,21 @@ export default function MPPPendingRequests() {
       )}
 
       <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
+
+      {toast && (
+        <div
+          className={`fixed top-6 right-6 z-[200] flex items-center gap-3 rounded-lg border px-5 py-3 shadow-lg ${
+            toast.type === 'success'
+              ? 'bg-[#E6F4EA] border-[#17703A] text-[#17703A]'
+              : 'bg-[#FEF2F2] border-[#A12632] text-[#A12632]'
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="text-lg">{toast.type === 'success' ? '✔' : '✖'}</span>
+          <span className="text-sm font-semibold">{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 }
