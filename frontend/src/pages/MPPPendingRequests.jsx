@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import ProfileModal from '../components/ProfileModal';
 import MPPSidebar from '../components/MPPSidebar';
 import { supabase } from '../supabaseClient';
@@ -26,6 +27,8 @@ const DEADLINE_FORMATTER = new Intl.DateTimeFormat('en-MY', {
 });
 
 export default function MPPPendingRequests() {
+  const location = useLocation();
+  const targetBookingId = location.state?.bookingId;
   console.log('[RENDER] MPPPendingRequests mounted at', window.location.pathname);
   const [requests, setRequests] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
@@ -47,6 +50,7 @@ export default function MPPPendingRequests() {
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectError, setRejectError] = useState('');
+  const [toast, setToast] = useState(null);
 
   // OCR — fresh run only. Saved values are read from the DB row (ocr_verifications[0]).
   const [ocrData, setOcrData] = useState(null);
@@ -108,12 +112,18 @@ export default function MPPPendingRequests() {
 
         if (!cancelled) {
           setRequests(data || []);
-          
-          // Auto-select the first PENDING request if it exists
-          if (data && data.length > 0) {
-            const firstPending = data.find(r => r.status === PENDING);
-            setSelectedRequest(firstPending || data[0]);
-          }
+
+          // Select the booking passed from All Bookings
+          const targetRequest = data?.find(
+            (r) => String(r.booking_id) === String(targetBookingId)
+          );
+
+          // If no target booking is found, use the existing default selection
+          const firstPending = data?.find(r => r.status === PENDING);
+
+          setSelectedRequest(
+            targetRequest || firstPending || data?.[0] || null
+          );
         }
       } catch (err) {
         if (!cancelled) setError(err.message);
@@ -123,7 +133,7 @@ export default function MPPPendingRequests() {
     };
     fetchRequests();
     return () => { cancelled = true; };
-  }, []);
+  }, [targetBookingId]);
 
   // Reset transient UI when the selected booking changes.
   useEffect(() => {
@@ -169,7 +179,28 @@ export default function MPPPendingRequests() {
   const effectiveOcr = ocrData || savedVerification?.extracted || null;
 
   const eq = (a, b) =>
-    String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+  String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+  
+  const normalizeTime = (s) => {
+  if (!s) return '';
+  const str = String(s).trim().toLowerCase();
+  if (str === 'whole day' || str === 'whole-day') return 'whole day';
+  const matches = str.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/g) || [];
+  return matches
+    .map((m) => {
+      const [, hStr, mStr, ap] = m.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/) || [];
+      if (!hStr) return null;
+      let h = Number(hStr);
+      const min = Number(mStr || 0);
+      const ampm = (ap || '').toLowerCase();
+      if (ampm === 'pm' && h < 12) h += 12;
+      if (ampm === 'am' && h === 12) h = 0;
+      return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+    })
+    .filter(Boolean)
+    .sort()
+    .join('–');
+  };
 
   const buildComparison = () => {
     if (!effectiveOcr) return [];
@@ -182,10 +213,11 @@ export default function MPPPendingRequests() {
       { key:'clubName',  label:'Club name', submitted:submittedClub,               ocr:effectiveOcr.clubName,  match:eq(effectiveOcr.clubName,  submittedClub) },
       { key:'eventName', label:'Event name',submitted:selectedRequest?.event_name, ocr:effectiveOcr.eventName, match:eq(effectiveOcr.eventName, selectedRequest?.event_name) },
       { key:'eventDate', label:'Event date',submitted:submittedDate,               ocr:effectiveOcr.eventDate, match:eq(effectiveOcr.eventDate, submittedDate) },
-      { key:'eventTime', label:'Time',      submitted:submittedTime,               ocr:effectiveOcr.eventTime, match:eq(effectiveOcr.eventTime, submittedTime) },
+      { key:'eventTime', label:'Time',      submitted:submittedTime,               ocr:effectiveOcr.eventTime, match:normalizeTime(effectiveOcr.eventTime) === normalizeTime(submittedTime) },
       { key:'venue',     label:'Venue',     submitted:submittedVenue,              ocr:effectiveOcr.venue,     match:eq(effectiveOcr.venue,     submittedVenue) },
       { key:'attendees', label:'Attendees', submitted:selectedRequest?.expected_attendees, ocr:effectiveOcr.attendees, match:Number(effectiveOcr.attendees) === Number(selectedRequest?.expected_attendees) },
       { key:'signatory', label:'Signatory', submitted:'—',                         ocr:effectiveOcr.signatory, match:!!effectiveOcr.signatory },
+      { key:'approvalStatus', label:'Approval status', submitted:'—',              ocr:effectiveOcr.approvalStatus, match: !!effectiveOcr.approvalStatus },
     ];
   };
 
@@ -225,7 +257,7 @@ export default function MPPPendingRequests() {
           !eq(extracted.clubName,  submittedClub)  ||
           !eq(extracted.eventName, selectedRequest?.event_name) ||
           !eq(extracted.eventDate, submittedDate)  ||
-          !eq(extracted.eventTime, submittedTime)  ||
+          normalizeTime(extracted.eventTime) !== normalizeTime(submittedTime) ||
           !eq(extracted.venue,     submittedVenue) ||
           Number(extracted.attendees) !== Number(selectedRequest?.expected_attendees);
         setDecision(anyMismatch ? VERIFY_MISMATCH : VERIFY_MATCHED);
@@ -237,20 +269,30 @@ export default function MPPPendingRequests() {
     }
   };
 
-  // ── Save verification — UPSERT one row per booking ────────────────
-  const handleSaveVerification = async () => {
+    // ── Save verification — UPSERT one row per booking ────────────────
+    const handleSaveVerification = async () => {
     if (!selectedRequest) return;
 
-    const fields = buildComparison();
+    const fields = buildComparison().map(f => {
+    const editedValue = reviewFields[f.key];
+    const isEdited = editedValue !== undefined && editedValue !== (f.ocr ?? '');
+    const effectiveOcr = isEdited ? editedValue : f.ocr;
+    const match = isEdited
+    ? (f.key === 'eventTime'
+        ? normalizeTime(effectiveOcr) === normalizeTime(f.submitted)
+        : eq(effectiveOcr, f.submitted))
+      : f.match;
+      return { ...f, ocr: effectiveOcr, match };
+    });
     const mismatchRows = fields
-      .filter(f => !f.match)
-      .map(f => ({ field: f.key, submitted: f.submitted ?? null, ocr: f.ocr ?? null }));
+    .filter(f => !f.match)
+    .map(f => ({ field: f.key, submitted: f.submitted ?? null, ocr: f.ocr ?? null }));
 
-    const autoStatus = mismatchRows.length > 0 ? VERIFY_MISMATCH : VERIFY_MATCHED;
-    const status = decision || autoStatus;
+      const autoStatus = mismatchRows.length > 0 ? VERIFY_MISMATCH : VERIFY_MATCHED;
+      const status = decision || autoStatus;
 
-    if ((status === VERIFY_MISMATCH || status === VERIFY_UNREADABLE) && remarks.trim().length < 10) {
-      setVerificationError(`Please explain the ${status === VERIFY_UNREADABLE ? 'unreadable document' : 'mismatch'} (min 10 characters).`);
+      if ((status === VERIFY_MISMATCH || status === VERIFY_UNREADABLE) && remarks.trim().length < 10) {
+        setVerificationError(`Please explain the ${status === VERIFY_UNREADABLE ? 'unreadable document' : 'mismatch'} (min 10 characters).`);
       return;
     }
 
@@ -302,20 +344,21 @@ export default function MPPPendingRequests() {
     }
     setIsProcessing(true);
     try {
-      const { error } = await supabase.rpc('approve_booking', {
+      const { error } = await supabase.rpc('approve_booking_with_capacity', {
         p_booking_id: selectedRequest.booking_id,
       });
       if (error) throw error;
       
-      const patch = { status: AWAITING_PAYMENT };
-      setRequests(prev => prev.map(r =>
-        r.booking_id === selectedRequest.booking_id ? { ...r, ...patch } : r));
-      setSelectedRequest(prev => ({ ...prev, ...patch }));
-      
-      // Deselect to clear the right panel and hide it from pending list
-      setSelectedRequest(null);
+      const remaining = requests.filter(r => r.booking_id !== selectedRequest.booking_id);
+      setRequests(remaining);
+      setSelectedRequest(remaining.length > 0 ? remaining[0] : null);
+      showToast(
+        remaining.length > 0
+          ? 'Booking approved. Moving to next request.'
+          : 'Booking approved. No more active requests.'
+      );
     } catch (err) {
-      alert('Error approving: ' + err.message);
+      showToast('Error approving: ' + err.message, 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -330,22 +373,23 @@ export default function MPPPendingRequests() {
     setRejectError('');
     setIsProcessing(true);
     try {
-      const { data, error } = await supabase.rpc('reject_booking', {
+        const { data, error } = await supabase.rpc('reject_booking', {
         p_booking_id: selectedRequest.booking_id,
         p_reason: trimmed,
       });
       if (error) throw error;
       
-      const patch = { status: REJECTED, rejection_reason: data.rejection_reason ?? trimmed };
-      setRequests(prev => prev.map(r =>
-        r.booking_id === selectedRequest.booking_id ? { ...r, ...patch } : r));
-      setSelectedRequest(prev => ({ ...prev, ...patch }));
+      const remaining = requests.filter(r => r.booking_id !== selectedRequest.booking_id);
+      setRequests(remaining);
+      setSelectedRequest(remaining.length > 0 ? remaining[0] : null);
       
       setShowRejectDialog(false);
       setRejectReason('');
-      
-      // Deselect to clear the right panel
-      setSelectedRequest(null);
+      showToast(
+        remaining.length > 0
+          ? 'Booking rejected. Moving to next request.'
+          : 'Booking rejected. No more active requests.'
+      );
     } catch (err) {
       setRejectError(err.message);
     } finally {
@@ -355,6 +399,11 @@ export default function MPPPendingRequests() {
 
   const handleReviewChange = (key, value) =>
     setReviewFields(prev => ({ ...prev, [key]: value }));
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   // ── Filters ───────────────────────────────────────────────────────
   const filteredAndSortedRequests = requests
@@ -441,14 +490,14 @@ export default function MPPPendingRequests() {
   };
 
   return (
-    <div className="flex h-screen bg-[#F6F4F5] overflow-hidden relative">
+    <div className="flex min-h-screen bg-[#F6F4F5]">
       <MPPSidebar
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}
         setIsProfileOpen={setIsProfileOpen}
       />
 
-      <main className="flex-1 flex flex-col p-4 md:p-10 h-full overflow-hidden">
+       <main className="flex-1 min-w-0 p-4 md:p-10">
         <div className="flex items-center gap-3 md:hidden mb-6">
           <button className="text-[#1F1A1C] p-1 -ml-1 cursor-pointer" onClick={() => setIsMobileMenuOpen(true)}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -471,9 +520,10 @@ export default function MPPPendingRequests() {
             No active booking requests at the moment. You're all caught up!
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-10 items-start h-full min-h-0">
+          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-10 items-stretch">
             {/* LEFT LIST */}
-            <div className="rounded-xl border border-[#E3DEE0] bg-white flex flex-col h-full overflow-hidden">
+            <div className="relative">
+              <div className="rounded-xl border border-[#E3DEE0] bg-white flex flex-col overflow-hidden max-h-[400px] lg:max-h-none lg:absolute lg:inset-0">
               {/* STICKY HEADER (Search & Filters) */}
               <div className="shrink-0 bg-white p-4 border-b border-[#E3DEE0] rounded-t-xl z-10">
                 <h2 className="text-sm font-bold mb-4">
@@ -532,7 +582,7 @@ export default function MPPPendingRequests() {
               </div>
 
               {/* SCROLLABLE LIST */}
-              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 min-h-0">
                 {filteredAndSortedRequests.length === 0 ? (
                   <p className="text-xs text-[#6B6468] italic text-center py-4">No requests match the current filter.</p>
                 ) : (
@@ -572,11 +622,12 @@ export default function MPPPendingRequests() {
                   })
                 )}
               </div>
+              </div>
             </div>
 
             {/* RIGHT DETAILS */}
             {selectedRequest && (
-              <div className="rounded-xl border border-[#E3DEE0] bg-white p-6 md:p-8 w-full max-w-5xl h-full overflow-y-auto">
+              <div className="rounded-xl border border-[#E3DEE0] bg-white p-6 md:p-8 w-full max-w-5xl">
                 <div className="mb-6">
                   <h2 className="text-xl font-bold text-[#1F1A1C]">
                     {selectedRequest.booking_ref} – {selectedRequest.venues?.venue_name}
@@ -657,45 +708,104 @@ export default function MPPPendingRequests() {
                       )}
 
                       {/* Comparison table — only when there's OCR data (fresh or saved) */}
-                      {effectiveOcr && decision !== VERIFY_UNREADABLE && (() => {
-                        const fields = buildComparison();
-                        const mismatches = fields.filter(f => !f.match).length;
-                        return (
-                          <div className="rounded-xl border border-[#E3DEE0] bg-white overflow-hidden">
-                            <div className="flex items-center justify-between border-b border-[#E3DEE0] bg-[#FAF9FA] px-4 py-3">
-                              <h4 className="text-sm font-bold text-[#1F1A1C]">AI OCR Verification</h4>
-                              {mismatches > 0 ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-[#FFF3CD] px-2.5 py-1 text-[11px] font-semibold text-[#8A6D00]">
-                                  ⚠ {mismatches} mismatch{mismatches === 1 ? '' : 'es'}
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-[#CDEFD6] px-2.5 py-1 text-[11px] font-semibold text-[#17703A]">✔ All matched</span>
-                              )}
-                            </div>
-                            <div className="grid grid-cols-[90px_1.1fr_1.1fr_1fr_28px] gap-3 border-b border-[#E3DEE0] bg-[#FAF9FA] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#6B6468]">
-                              <span>Field</span><span>Submitted (DB)</span><span>OCR Extracted</span><span>MPP Review</span><span />
-                            </div>
-                            <div className="divide-y divide-[#E3DEE0]">
-                              {fields.map(f => (
-                                <div key={f.key} className={`grid grid-cols-[90px_1.1fr_1.1fr_1fr_28px] gap-3 px-4 py-2.5 text-[13px] items-center ${f.match ? '' : 'bg-[#FFF9E6]'}`}>
-                                  <span className="font-medium text-[#6B6468]">{f.label}</span>
-                                  <span className="text-[#1F1A1C] truncate min-w-0" title={String(f.submitted)}>{String(f.submitted ?? '—')}</span>
-                                  <span className="text-[#1F1A1C] truncate min-w-0" title={String(f.ocr)}>{String(f.ocr ?? '—')}</span>
-                                  <input type="text"
-                                    value={reviewFields[f.key] ?? (f.ocr ?? '')}
-                                    onChange={(e) => handleReviewChange(f.key, e.target.value)}
-                                    className="w-full rounded border border-[#E3DEE0] bg-white px-2 py-1 text-[13px] outline-none focus:border-[#7A1F3D]" />
-                                  <span className={`text-center ${f.match ? 'text-[#17703A]' : 'text-[#D97706]'}`}>{f.match ? '✔' : '⚠'}</span>
-                                </div>
-                              ))}
-                            </div>
-                            <div className="border-t border-[#E3DEE0] bg-[#FAF9FA] px-4 py-2 text-[11px] text-[#6B6468]">
-                              ✔ / ⚠ compares OCR against what the applicant submitted. The MPP Review column is for corrections only.
-                            </div>
-                          </div>
-                        );
-                      })()}
+{effectiveOcr && decision !== VERIFY_UNREADABLE && (() => {
+  const fields = buildComparison();
+  const mismatches = fields.filter(f => !f.match).length;
+  return (
+    <div className="rounded-xl border border-[#E3DEE0] bg-white overflow-hidden">
+      <div className="flex items-center justify-between border-b border-[#E3DEE0] bg-[#FAF9FA] px-4 py-3">
+        <h4 className="text-sm font-bold text-[#1F1A1C]">AI OCR Verification</h4>
+        {mismatches > 0 ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-[#FFF3CD] px-2.5 py-1 text-[11px] font-semibold text-[#8A6D00]">
+            ⚠ {mismatches} mismatch{mismatches === 1 ? '' : 'es'}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 rounded-full bg-[#CDEFD6] px-2.5 py-1 text-[11px] font-semibold text-[#17703A]">✔ All matched</span>
+        )}
+      </div>
+      <div className="grid grid-cols-[90px_1.1fr_1.4fr_28px] gap-3 border-b border-[#E3DEE0] bg-[#FAF9FA] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#6B6468]">
+        <span>Field</span><span>Submitted (DB)</span><span>OCR Extracted / MPP Review</span><span />
+      </div>
+      <div className="divide-y divide-[#E3DEE0]">
+        {fields.map(f => {
+          const editedValue = reviewFields[f.key] ?? (f.ocr ?? '');
+          const isEdited = reviewFields[f.key] !== undefined && reviewFields[f.key] !== (f.ocr ?? '');
+          const currentMatch = isEdited
+            ? (f.key === 'eventTime'
+              ? normalizeTime(editedValue) === normalizeTime(f.submitted)
+              : eq(editedValue, f.submitted))
+            : f.match;
+          return (
+            <Fragment key={f.key}>
+              <div className={`grid grid-cols-[90px_1.1fr_1.4fr_28px] gap-3 px-4 py-2.5 text-[13px] items-center ${currentMatch ? '' : 'bg-[#FFF9E6]'}`}>
+                <span className="font-medium text-[#6B6468]">{f.label}</span>
+                <span className="text-[#1F1A1C] truncate min-w-0" title={String(f.submitted)}>{String(f.submitted ?? '—')}</span>
+                <div className="relative">
+                  <input type="text"
+                    value={editedValue}
+                    onChange={(e) => handleReviewChange(f.key, e.target.value)}
+                    placeholder={f.ocr ?? ''}
+                    title={isEdited ? `OCR was: ${f.ocr ?? '—'}` : String(f.ocr ?? '—')}
+                    className={`w-full rounded border px-2 py-1 pr-7 text-[13px] outline-none focus:border-[#7A1F3D] ${
+                      isEdited ? 'border-[#7A1F3D] bg-[#F6E9EE]' : 'border-[#E3DEE0] bg-white'
+                    }`} />
+                  {isEdited && (
+                    <button
+                      type="button"
+                      onClick={() => handleReviewChange(f.key, undefined)}
+                      title="Reset to OCR value"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 text-[11px] text-[#7A1F3D] hover:text-[#651830] cursor-pointer px-1"
+                    >
+                      ↺
+                    </button>
+                  )}
+                </div>
+                <span className={`text-center ${currentMatch ? 'text-[#17703A]' : 'text-[#D97706]'}`}>{currentMatch ? '✔' : '⚠'}</span>
+              </div>
 
+              {/* Inline banner after the approvalStatus row */}
+              {f.key === 'approvalStatus' && (() => {
+                const status = String(f.ocr || '').trim().toUpperCase();
+                const isApproved = ['APPROVED', 'DILULUSKAN', 'DILULUS', 'LULUS'].includes(status);
+
+                if (!status) {
+                  return (
+                    <div className="px-4 py-3 bg-yellow-50 border-l-4 border-yellow-400">
+                      <p className="text-sm font-bold text-yellow-800">
+                        ℹ No approval status found in the letter
+                      </p>
+                      <p className="text-xs text-yellow-700 mt-1">
+                        The letter doesn't state an explicit APPROVED status. Verify manually before approving.
+                      </p>
+                    </div>
+                  );
+                }
+
+                if (!isApproved) {
+                  return (
+                    <div className="px-4 py-3 bg-red-50 border-l-4 border-red-500">
+                      <p className="text-sm font-bold text-red-800">
+                        ⚠ Letter status is "{f.ocr}" — not APPROVED
+                      </p>
+                      <p className="text-xs text-red-700 mt-1">
+                        Do NOT approve this booking until a valid APPROVED letter is provided.
+                      </p>
+                    </div>
+                  );
+                }
+
+                return null;
+              })()}
+            </Fragment>
+          );
+        })}
+      </div>
+      <div className="border-t border-[#E3DEE0] bg-[#FAF9FA] px-4 py-2 text-[11px] text-[#6B6468]">
+        ✔ / ⚠ compares the value against what the applicant submitted. Edit the OCR column to correct misreads — edited cells are highlighted.
+      </div>
+    </div>
+  );
+})()}
                       {/* Inline verification — only when there's OCR data (fresh or saved) */}
                       {effectiveOcr && (
                         <div className="rounded-xl border border-[#E3DEE0] bg-white p-4 space-y-3">
@@ -872,6 +982,21 @@ export default function MPPPendingRequests() {
       )}
 
       <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
+
+      {toast && (
+        <div
+          className={`fixed top-6 right-6 z-[200] flex items-center gap-3 rounded-lg border px-5 py-3 shadow-lg ${
+            toast.type === 'success'
+              ? 'bg-[#E6F4EA] border-[#17703A] text-[#17703A]'
+              : 'bg-[#FEF2F2] border-[#A12632] text-[#A12632]'
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="text-lg">{toast.type === 'success' ? '✔' : '✖'}</span>
+          <span className="text-sm font-semibold">{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 }

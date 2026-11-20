@@ -228,7 +228,7 @@ export default function MPPDashboard() {
               <h3 className="text-[#1F1A1C] text-lg md:text-xl font-bold">This Week</h3>
               <span className="text-[#6B6468] text-sm font-medium">({dateRangeStr})</span>
             </div>
-            <button className="bg-[#F2B705] text-[#1F1A1C] text-[11px] font-semibold rounded-lg px-4 py-2 hover:bg-yellow-500 transition-colors cursor-pointer">
+            <button type="button" onClick={() => navigate('/mpp-dashboard/calendar')} className="bg-[#F2B705] text-[#1F1A1C] text-[11px] font-semibold rounded-lg px-4 py-2 hover:bg-yellow-500 transition-colors cursor-pointer">
               View Full Calendar →
             </button>
           </div>

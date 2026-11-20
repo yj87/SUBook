@@ -36,10 +36,30 @@ const ACTIVE_BOOKING_STATUSES = [
   'approved_awaiting_payment',
 ];
 
+const CALENDAR_BOOKING_STATUSES = ['confirmed'];
+
+const BOOKING_SELECT = `
+  booking_id,
+  booking_ref,
+  event_name,
+  purpose,
+  booking_type,
+  start_time,
+  end_time,
+  date,
+  status,
+  venue_id,
+  venues (venue_name)
+`;
+
+const MANAGEMENT_BOOKING_SELECT = `${BOOKING_SELECT},
+  profiles!bookings_profile_id_fkey (full_name, matric_no, role)
+`;
+
 // GET /api/bookings/calendar
 // Return every visible booking intersecting the requested Malaysia-time week.
 router.get('/calendar', requireMPPAdmin, async (req, res) => {
-  const { start, end } = req.query;
+  const { start, end, venue_id: venueId } = req.query;
   const startDate = new Date(start);
   const endDate = new Date(end);
 
@@ -48,32 +68,73 @@ router.get('/calendar', requireMPPAdmin, async (req, res) => {
   }
 
   try {
-    const { data, error } = await supabase
+    const requestedStart = startDate.toISOString();
+    const requestedEnd = endDate.toISOString();
+
+    // Fetch the full date-overlap set first. Status filtering is kept here so
+    // diagnostics can distinguish an empty Supabase result from bookings that
+    // were intentionally excluded because they are not confirmed.
+    let query = supabase
       .from('bookings')
-      .select(`
-        booking_id,
-        booking_ref,
-        event_name,
-        purpose,
-        booking_type,
-        start_time,
-        end_time,
-        date,
-        status,
-        venue_id,
-        venues (venue_name)
-      `)
-      .lt('start_time', endDate.toISOString())
-      .gt('end_time', startDate.toISOString())
-      .in('status', ACTIVE_BOOKING_STATUSES)
-      .order('start_time', { ascending: true });
+      .select(BOOKING_SELECT)
+      .lt('start_time', requestedEnd)
+      .gt('end_time', requestedStart);
+    if (venueId) query = query.eq('venue_id', venueId);
+    const { data, error } = await query.order('start_time', { ascending: true });
 
+    if (error) {
+      console.error('[Calendar] Supabase query failed:', {
+        code: error.code || null,
+        message: error.message,
+      });
+      throw error;
+    }
+
+    const rawBookings = data || [];
+    const bookings = rawBookings.filter((booking) =>
+      CALENDAR_BOOKING_STATUSES.includes(String(booking.status || '').trim().toLowerCase())
+    );
+
+    console.log('[Calendar Debug]', {
+      'Query Status': 'Success',
+      'Raw Record Count': rawBookings.length,
+      'Filtered Record Count': bookings.length,
+      'Returned Booking Count': bookings.length,
+    });
+
+    return res.status(200).json({ success: true, bookings });
+  } catch (error) {
+    console.error('Calendar bookings error:', error.message || error);
+    return res.status(500).json({ success: false, error: 'Unable to retrieve calendar bookings' });
+  }
+});
+
+// GET /api/bookings/management
+// Return all booking lifecycle records for the MPP management list.
+router.get('/management', requireMPPAdmin, async (req, res) => {
+  const { scope = 'all', search = '', venue_id: venueId, confirmed_only: confirmedOnly } = req.query;
+  if (!['active', 'past', 'all'].includes(scope)) {
+    return res.status(400).json({ success: false, error: 'scope must be active, past, or all' });
+  }
+
+  try {
+    let query = supabase
+      .from('bookings')
+      .select(MANAGEMENT_BOOKING_SELECT)
+      .order('start_time', { ascending: false });
+
+    if (scope === 'active') query = query.gt('end_time', new Date().toISOString());
+    else if (scope === 'past') query = query.lte('end_time', new Date().toISOString());
+    if (confirmedOnly === 'true') query = query.eq('status', 'confirmed');
+    if (venueId) query = query.eq('venue_id', venueId);
+    if (search.trim()) query = query.ilike('booking_ref', `%${search.trim()}%`);
+
+    const { data, error } = await query;
     if (error) throw error;
-
     return res.status(200).json({ success: true, bookings: data || [] });
   } catch (error) {
-    console.error('Calendar bookings error:', error);
-    return res.status(500).json({ success: false, error: 'Unable to retrieve calendar bookings' });
+    console.error('Booking management error:', error);
+    return res.status(500).json({ success: false, error: 'Unable to retrieve bookings' });
   }
 });
 
@@ -353,10 +414,10 @@ router.post(
         });
       }
 
-      if (clubId) {
-        return res.status(501).json({
+      if (clubId && !isUUID(clubId)) {
+        return res.status(400).json({
           success: false,
-          error: 'Club booking authorization is not configured yet',
+          error: 'Invalid clubId',
         });
       }
 

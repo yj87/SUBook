@@ -20,6 +20,15 @@ export default function MPPSidebar({ isMobileMenuOpen, setIsMobileMenuOpen, setI
   };
 
   const isActive = (path) => location.pathname === path;
+  const navItems = [
+    { label: 'Dashboard', path: '/mpp-dashboard' },
+    { label: 'My Approval', path: '/mpp-dashboard/requests' },
+    { label: 'Calendar', path: '/mpp-dashboard/calendar' },
+    { label: 'All Bookings', path: '/mpp-dashboard/bookings' },
+    { label: 'Venue Management' },
+    { label: 'Transaction History' },
+    { label: 'Reports & Analytics' },
+  ];
 
   return (
     <>
@@ -32,7 +41,7 @@ export default function MPPSidebar({ isMobileMenuOpen, setIsMobileMenuOpen, setI
       )}
 
       <aside className={`
-        fixed md:static inset-y-0 left-0 z-50 w-[220px] bg-[#7A1F3D] text-white flex flex-col justify-between shrink-0 h-full transition-transform duration-300
+        fixed md:sticky md:top-0 inset-y-0 left-0 z-50 w-[220px] bg-[#7A1F3D] text-white flex min-h-screen h-screen flex-col justify-between shrink-0 transition-transform duration-300
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         <div>
@@ -47,46 +56,17 @@ export default function MPPSidebar({ isMobileMenuOpen, setIsMobileMenuOpen, setI
           </div>
 
           <nav className="flex flex-col mt-4">
-            <button 
-              onClick={() => navigate('/mpp-dashboard')} 
-              className={`text-left px-6 py-4 text-sm transition-colors cursor-pointer w-full ${
-                isActive('/mpp-dashboard') ? 'bg-[#5E1730] font-semibold' : 'hover:bg-[#5E1730]'
-              }`}
-            >
-              Dashboard
-            </button>
-            
-            <button 
-              onClick={() => navigate('/mpp-dashboard/requests')} 
-              className={`text-left px-6 py-4 text-sm transition-colors cursor-pointer w-full ${
-                isActive('/mpp-dashboard/requests') ? 'bg-[#5E1730] font-semibold' : 'hover:bg-[#5E1730]'
-              }`}
-            >
-              My Approval
-            </button>
-
-            {/* ADDED ALL BOOKINGS HERE */}
-            <button 
-              onClick={() => navigate('/mpp-dashboard/bookings')} 
-              className={`text-left px-6 py-4 text-sm transition-colors cursor-pointer w-full ${
-                isActive('/mpp-dashboard/bookings') ? 'bg-[#5E1730] font-semibold' : 'hover:bg-[#5E1730]'
-              }`}
-            >
-              All Bookings
-            </button>
-            
-            <button className="text-left px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors cursor-pointer w-full">
-              Calendar
-            </button>
-            <button className="text-left px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors cursor-pointer w-full">
-              Venue Management
-            </button>
-            <button className="text-left px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors cursor-pointer w-full">
-              Transaction History
-            </button>
-            <button className="text-left px-6 py-4 text-sm hover:bg-[#5E1730] transition-colors cursor-pointer w-full">
-              Reports & Analytics
-            </button>
+            {navItems.map(({ label, path }) => (
+              <button
+                key={label}
+                onClick={path ? () => navigate(path) : undefined}
+                className={`text-left px-6 py-4 text-sm transition-colors cursor-pointer w-full ${
+                  path && isActive(path) ? 'bg-[#5E1730] font-semibold' : 'hover:bg-[#5E1730]'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </nav>
         </div>
 
