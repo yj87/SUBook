@@ -596,7 +596,7 @@ export default function MPPPendingRequests() {
                     return (
                       <button key={req.booking_id}
                         onClick={() => { setSelectedRequest(req); setRejectReason(''); setRejectError(''); }}
-                        className={`text-left p-3 rounded-lg border transition-colors ${
+                        className={`cursor-pointer text-left p-3 rounded-lg border transition-colors ${
                           selectedRequest?.booking_id === req.booking_id
                             ? 'bg-[#F6E9EE] border-[#7A1F3D]'
                             : 'bg-[#FAF8F9] border-[#E3DEE0] hover:bg-[#F3EEF0]'

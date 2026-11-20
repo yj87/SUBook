@@ -212,7 +212,7 @@ const facilities = useMemo(() => {
               </ul>
             </div>
 
-            <button type="button" disabled={!isAvailable} onClick={() => navigate(`/venues/${encodeURIComponent(venue.venue_id)}/availability`)} className="mt-7 flex h-11 w-full items-center justify-center rounded-lg bg-[#7A1F3D] text-sm font-semibold text-white transition-colors hover:bg-[#651830] disabled:cursor-not-allowed disabled:opacity-50">{isAvailable ? 'Select Slot' : 'Venue Unavailable'}</button>
+            <button type="button" disabled={!isAvailable} onClick={() => navigate(`/venues/${encodeURIComponent(venue.venue_id)}/availability`)} className="mt-7 flex h-11 w-full items-center justify-center rounded-lg bg-[#7A1F3D] text-sm font-semibold text-white transition-colors hover:bg-[#651830] disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer">{isAvailable ? 'Select Slot' : 'Venue Unavailable'}</button>
           </section>
         </div>
       </main>
