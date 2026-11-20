@@ -47,6 +47,7 @@ const BOOKING_SELECT = `
   start_time,
   end_time,
   date,
+  updated_at,
   status,
   venue_id,
   venues (venue_name)
@@ -121,7 +122,8 @@ router.get('/management', requireMPPAdmin, async (req, res) => {
     let query = supabase
       .from('bookings')
       .select(MANAGEMENT_BOOKING_SELECT)
-      .order('start_time', { ascending: false });
+      .order('updated_at', { ascending: false, nullsFirst: false })
+      .order('booking_id', { ascending: false });
 
     if (scope === 'active') query = query.gt('end_time', new Date().toISOString());
     else if (scope === 'past') query = query.lte('end_time', new Date().toISOString());
