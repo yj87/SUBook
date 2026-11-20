@@ -442,6 +442,7 @@ export default function MPPPendingRequests() {
       if (a.status === PENDING && b.status !== PENDING) return -1;
       if (a.status !== PENDING && b.status === PENDING) return 1;
 
+      // 2. Then sort by the selected sort order
       if (sortOrder === 'newest')    return new Date(b.submitted_at) - new Date(a.submitted_at);
       if (sortOrder === 'oldest')    return new Date(a.submitted_at) - new Date(b.submitted_at);
       if (sortOrder === 'date_asc')  return new Date(a.start_time) - new Date(b.start_time);
