@@ -436,7 +436,12 @@ export default function MPPPendingRequests() {
 
       return matchesSearch && matchesVenue;
     })
+
     .sort((a, b) => {
+      // 1. Prioritize Pending Approvals above Awaiting Payments
+      if (a.status === PENDING && b.status !== PENDING) return -1;
+      if (a.status !== PENDING && b.status === PENDING) return 1;
+
       if (sortOrder === 'newest')    return new Date(b.submitted_at) - new Date(a.submitted_at);
       if (sortOrder === 'oldest')    return new Date(a.submitted_at) - new Date(b.submitted_at);
       if (sortOrder === 'date_asc')  return new Date(a.start_time) - new Date(b.start_time);
@@ -490,15 +495,15 @@ export default function MPPPendingRequests() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#F6F4F5]">
+    <div className="flex h-screen bg-[#F6F4F5] overflow-hidden relative">
       <MPPSidebar
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}
         setIsProfileOpen={setIsProfileOpen}
       />
 
-       <main className="flex-1 min-w-0 p-4 md:p-10">
-        <div className="flex items-center gap-3 md:hidden mb-6">
+       <main className="flex-1 min-w-0 p-4 md:p-10 h-full overflow-hidden flex flex-col">
+        <div className="flex items-center gap-3 md:hidden mb-6 shrink-0">
           <button className="text-[#1F1A1C] p-1 -ml-1 cursor-pointer" onClick={() => setIsMobileMenuOpen(true)}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M4 6h16M4 12h16M4 18h16" />
@@ -520,10 +525,10 @@ export default function MPPPendingRequests() {
             No active booking requests at the moment. You're all caught up!
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-10 items-stretch">
+          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-10 items-stretch flex-1 min-h-0">
             {/* LEFT LIST */}
-            <div className="relative">
-              <div className="rounded-xl border border-[#E3DEE0] bg-white flex flex-col overflow-hidden max-h-[400px] lg:max-h-none lg:absolute lg:inset-0">
+            <div className="h-full min-h-0">
+              <div className="rounded-xl border border-[#E3DEE0] bg-white flex flex-col h-full overflow-hidden">
               {/* STICKY HEADER (Search & Filters) */}
               <div className="shrink-0 bg-white p-4 border-b border-[#E3DEE0] rounded-t-xl z-10">
                 <h2 className="text-sm font-bold mb-4">
@@ -540,7 +545,6 @@ export default function MPPPendingRequests() {
                     <option value="All Active">All Active Requests</option>
                     <option value="Pending">Pending Approval</option>
                     <option value="Awaiting Payment">Awaiting Payment</option>
-                    <option value="Payment Submitted">Payment Submitted</option>
                   </select>
 
                   <input 
@@ -627,7 +631,7 @@ export default function MPPPendingRequests() {
 
             {/* RIGHT DETAILS */}
             {selectedRequest && (
-              <div className="rounded-xl border border-[#E3DEE0] bg-white p-6 md:p-8 w-full max-w-5xl">
+              <div className="rounded-xl border border-[#E3DEE0] bg-white p-6 md:p-8 w-full max-w-5xl h-full overflow-y-auto">
                 <div className="mb-6">
                   <h2 className="text-xl font-bold text-[#1F1A1C]">
                     {selectedRequest.booking_ref} – {selectedRequest.venues?.venue_name}
