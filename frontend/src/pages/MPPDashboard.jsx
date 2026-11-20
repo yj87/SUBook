@@ -136,7 +136,7 @@ export default function MPPDashboard() {
       <div
         ref={popoverRef}
         style={{ position: 'fixed', left, top, width: popoverWidth }}
-        className="z-[100] rounded-xl border border-[#E3DEE0] bg-white shadow-xl overflow-hidden"
+        className="cursor-pointer z-[100] rounded-xl border border-[#E3DEE0] bg-white shadow-xl overflow-hidden"
       >
         <div className="flex items-center justify-between border-b border-[#E3DEE0] px-4 py-2.5">
           <p className="text-xs font-bold text-[#7A1F3D]">{title}</p>
@@ -148,7 +148,7 @@ export default function MPPDashboard() {
             ×
           </button>
         </div>
-        <div className="max-h-80 overflow-y-auto divide-y divide-[#F0EBED]">
+        <div className="max-h-80 overflow-y-auto divide-y divide-[#F0EBED] cursor-pointer">
           {cellBookings.map((booking) => (
             <div key={booking.booking_id} className="px-4 py-2.5">
               <p className="text-sm font-semibold text-[#1F1A1C]">{booking.event_name}</p>
