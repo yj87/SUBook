@@ -15,11 +15,16 @@ const supabaseUrl = process.env.SUPABASE_URL
   ?.replace(/\/rest\/v1\/?$/, '');
 
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
   throw new Error(
     'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY'
   );
+}
+
+if (!supabaseAnonKey) {
+  throw new Error('Missing SUPABASE_ANON_KEY');   // ← add this
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -28,6 +33,17 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
     autoRefreshToken: false,
   },
 });
+
+function userScopedClient(accessToken) {
+  return createClient(
+    supabaseUrl,
+    supabaseAnonKey,
+    {
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    }
+  );
+}
 
 const ACTIVE_BOOKING_STATUSES = [
   'pending',
@@ -682,9 +698,19 @@ router.post(
       });
     }
 
+    const token = (req.headers.authorization || '').match(/^Bearer (.+)$/i)?.[1];
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        error: 'Missing auth token',
+      });
+    }
+
     try {
-      // Atomic capacity check and status transition.
-      const { data, error } = await supabase.rpc(
+      // ⬇️ THE FIX: use user-scoped client so auth.uid() resolves
+      const userScoped = userScopedClient(token);
+
+      const { data, error } = await userScoped.rpc(
         'approve_booking_with_capacity',
         { p_booking_id: bookingId }
       );
@@ -705,8 +731,7 @@ router.post(
         });
       }
 
-      // Approval already committed in the database.
-      // Report audit failures separately.
+      // Audit log stays on service role — user_id comes from req.user
       const { error: logError } = await supabase
         .from('audit_logs')
         .insert({
@@ -720,11 +745,9 @@ router.post(
 
       if (logError) {
         console.error('Approval audit log error:', logError);
-
         return res.status(200).json({
           success: true,
-          message:
-            'Booking approved, but audit logging failed',
+          message: 'Booking approved, but audit logging failed',
           booking: data,
           audit_logged: false,
         });
@@ -738,7 +761,115 @@ router.post(
       });
     } catch (error) {
       console.error('Approve booking error:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+      });
+    }
+  }
+);
 
+// ========================================
+// POST /api/bookings/reject-booking
+// MPP admin rejects a pending booking
+// ========================================
+
+router.post(
+  '/reject-booking',
+  requireMPPAdmin,
+  async (req, res) => {
+    const { bookingId, reason } = req.body || {};
+
+    if (!isUUID(bookingId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid bookingId is required',
+      });
+    }
+
+    const trimmed = String(reason ?? '').trim();
+    if (trimmed.length < 10) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reason must be at least 10 characters',
+      });
+    }
+    if (trimmed.length > 500) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reason must be at most 500 characters',
+      });
+    }
+
+    const token = (req.headers.authorization || '').match(/^Bearer (.+)$/i)?.[1];
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        error: 'Missing auth token',
+      });
+    }
+
+    try {
+      // ⬇️ THE FIX: same user-scoped client
+      const userScoped = userScopedClient(token);
+
+      const { data, error } = await userScoped.rpc(
+        'reject_booking',
+        {
+          p_booking_id: bookingId,
+          p_reason: trimmed,
+        }
+      );
+
+if (error) {
+  console.error('Reject RPC error:', error);
+
+  if (error.code === '42501') {
+    return res.status(403).json({ success: false, error: error.message });
+  }
+  if (error.code === 'P0002') {
+    return res.status(404).json({ success: false, error: error.message });
+  }
+  if (error.code === 'P0001') {
+    return res.status(409).json({ success: false, error: error.message });
+  }
+
+  return res.status(503).json({
+    success: false,
+    error: 'Booking rejection service unavailable',
+  });
+}
+
+      const { error: logError } = await supabase
+        .from('audit_logs')
+        .insert({
+          user_id: req.user.id,
+          action: 'REJECT_BOOKING',
+          details: {
+            bookingId,
+            reason: trimmed,
+            rejected_at: new Date().toISOString(),
+          },
+        });
+
+      if (logError) {
+        console.error('Rejection audit log error:', logError);
+        return res.status(200).json({
+          success: true,
+          message: 'Booking rejected, but audit logging failed',
+          booking: data,
+          audit_logged: false,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Booking rejected successfully',
+        booking: data,
+        audit_logged: true,
+      });
+    } catch (error) {
+      console.error('Reject booking error:', error);
       return res.status(500).json({
         success: false,
         error: 'Internal server error',

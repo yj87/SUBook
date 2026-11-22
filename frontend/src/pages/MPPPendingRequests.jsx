@@ -337,65 +337,96 @@ export default function MPPPendingRequests() {
   };
 
   // ── Approve / Reject ──────────────────────────────────────────────
-  const handleApprove = async () => {
-    if (BLOCK_APPROVE_WITHOUT_VERIFICATION && !getVerification(selectedRequest)) {
-      alert('Please save an OCR verification before approving.');
-      return;
-    }
-    setIsProcessing(true);
-    try {
-      const { error } = await supabase.rpc('approve_booking_with_capacity', {
-        p_booking_id: selectedRequest.booking_id,
-      });
-      if (error) throw error;
-      
-      const remaining = requests.filter(r => r.booking_id !== selectedRequest.booking_id);
-      setRequests(remaining);
-      setSelectedRequest(remaining.length > 0 ? remaining[0] : null);
-      showToast(
-        remaining.length > 0
-          ? 'Booking approved. Moving to next request.'
-          : 'Booking approved. No more active requests.'
-      );
-    } catch (err) {
-      showToast('Error approving: ' + err.message, 'error');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+const handleApprove = async () => {
+  if (BLOCK_APPROVE_WITHOUT_VERIFICATION && !getVerification(selectedRequest)) {
+    alert('Please save an OCR verification before approving.');
+    return;
+  }
+
+  setIsProcessing(true);
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    const res = await fetch(`${API}/api/bookings/approve-booking`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session?.access_token ?? ''}`,
+      },
+      body: JSON.stringify({ bookingId: selectedRequest.booking_id }),
+    });
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Approve failed (${res.status})`);
+
+    const remaining = requests.filter(
+      (r) => r.booking_id !== selectedRequest.booking_id
+    );
+    setRequests(remaining);
+    setSelectedRequest(remaining.length > 0 ? remaining[0] : null);
+
+    showToast(
+      remaining.length > 0
+        ? 'Booking approved. Moving to next request.'
+        : 'Booking approved. No more active requests.'
+    );
+  } catch (err) {
+    showToast('Error approving: ' + err.message, 'error');
+  } finally {
+    setIsProcessing(false);
+  }
+};
 
   const handleReject = async () => {
-    const trimmed = rejectReason.trim();
-    if (trimmed.length < 10) {
-      setRejectError('Please enter at least 10 characters explaining the reason.');
-      return;
-    }
-    setRejectError('');
-    setIsProcessing(true);
-    try {
-        const { data, error } = await supabase.rpc('reject_booking', {
-        p_booking_id: selectedRequest.booking_id,
-        p_reason: trimmed,
-      });
-      if (error) throw error;
-      
-      const remaining = requests.filter(r => r.booking_id !== selectedRequest.booking_id);
-      setRequests(remaining);
-      setSelectedRequest(remaining.length > 0 ? remaining[0] : null);
-      
-      setShowRejectDialog(false);
-      setRejectReason('');
-      showToast(
-        remaining.length > 0
-          ? 'Booking rejected. Moving to next request.'
-          : 'Booking rejected. No more active requests.'
-      );
-    } catch (err) {
-      setRejectError(err.message);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  const trimmed = rejectReason.trim();
+
+  if (trimmed.length < 10) {
+    setRejectError('Please enter at least 10 characters explaining the reason.');
+    return;
+  }
+
+  setRejectError('');
+  setIsProcessing(true);
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    const res = await fetch(`${API}/api/bookings/reject-booking`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session?.access_token ?? ''}`,
+      },
+      body: JSON.stringify({
+        bookingId: selectedRequest.booking_id,
+        reason: trimmed,
+      }),
+    });
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Reject failed (${res.status})`);
+
+    const remaining = requests.filter(
+      (r) => r.booking_id !== selectedRequest.booking_id
+    );
+    setRequests(remaining);
+    setSelectedRequest(remaining.length > 0 ? remaining[0] : null);
+
+    setShowRejectDialog(false);
+    setRejectReason('');
+
+    showToast(
+      remaining.length > 0
+        ? 'Booking rejected. Moving to next request.'
+        : 'Booking rejected. No more active requests.'
+    );
+  } catch (err) {
+    setRejectError(err.message);
+  } finally {
+    setIsProcessing(false);
+  }
+};
 
   const handleReviewChange = (key, value) =>
     setReviewFields(prev => ({ ...prev, [key]: value }));
