@@ -29,6 +29,17 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   },
 });
 
+function userScopedClient(accessToken) {
+  return createClient(
+    supabaseUrl,
+    process.env.SUPABASE_ANON_KEY,
+    {
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    }
+  );
+}
+
 const ACTIVE_BOOKING_STATUSES = [
   'pending',
   'pending_approval',
