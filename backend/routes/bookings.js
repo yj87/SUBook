@@ -15,11 +15,16 @@ const supabaseUrl = process.env.SUPABASE_URL
   ?.replace(/\/rest\/v1\/?$/, '');
 
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
   throw new Error(
     'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY'
   );
+}
+
+if (!supabaseAnonKey) {
+  throw new Error('Missing SUPABASE_ANON_KEY');   // ← add this
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -32,7 +37,7 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 function userScopedClient(accessToken) {
   return createClient(
     supabaseUrl,
-    process.env.SUPABASE_ANON_KEY,
+    supabaseAnonKey,
     {
       global: { headers: { Authorization: `Bearer ${accessToken}` } },
       auth: { persistSession: false, autoRefreshToken: false },
@@ -816,21 +821,24 @@ router.post(
         }
       );
 
-      if (error) {
-        console.error('Reject RPC error:', error);
+if (error) {
+  console.error('Reject RPC error:', error);
 
-        if (error.code === 'P0001') {
-          return res.status(409).json({
-            success: false,
-            error: error.message,
-          });
-        }
+  if (error.code === '42501') {
+    return res.status(403).json({ success: false, error: error.message });
+  }
+  if (error.code === 'P0002') {
+    return res.status(404).json({ success: false, error: error.message });
+  }
+  if (error.code === 'P0001') {
+    return res.status(409).json({ success: false, error: error.message });
+  }
 
-        return res.status(503).json({
-          success: false,
-          error: 'Booking rejection service unavailable',
-        });
-      }
+  return res.status(503).json({
+    success: false,
+    error: 'Booking rejection service unavailable',
+  });
+}
 
       const { error: logError } = await supabase
         .from('audit_logs')
