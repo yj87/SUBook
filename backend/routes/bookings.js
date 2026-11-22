@@ -747,4 +747,103 @@ router.post(
   }
 );
 
+// ========================================
+// POST /api/bookings/reject-booking
+// MPP admin rejects a pending booking
+// ========================================
+
+router.post(
+  '/reject-booking',
+  requireMPPAdmin,
+  async (req, res) => {
+    const { bookingId, reason } = req.body || {};
+
+    if (!isUUID(bookingId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid bookingId is required',
+      });
+    }
+
+    const trimmed = String(reason ?? '').trim();
+    if (trimmed.length < 10) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reason must be at least 10 characters',
+      });
+    }
+    if (trimmed.length > 500) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reason must be at most 500 characters',
+      });
+    }
+
+    try {
+      const { data, error } = await supabase.rpc(
+        'reject_booking',
+        {
+          p_booking_id: bookingId,
+          p_reason: trimmed,
+        }
+      );
+
+      if (error) {
+        console.error('Reject RPC error:', error);
+
+        if (error.code === 'P0001') {
+          return res.status(409).json({
+            success: false,
+            error: error.message,
+          });
+        }
+
+        return res.status(503).json({
+          success: false,
+          error: 'Booking rejection service unavailable',
+        });
+      }
+
+      // Audit log — same pattern as approve
+      const { error: logError } = await supabase
+        .from('audit_logs')
+        .insert({
+          user_id: req.user.id,
+          action: 'REJECT_BOOKING',
+          details: {
+            bookingId,
+            reason: trimmed,
+            rejected_at: new Date().toISOString(),
+          },
+        });
+
+      if (logError) {
+        console.error('Rejection audit log error:', logError);
+
+        return res.status(200).json({
+          success: true,
+          message:
+            'Booking rejected, but audit logging failed',
+          booking: data,
+          audit_logged: false,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Booking rejected successfully',
+        booking: data,
+        audit_logged: true,
+      });
+    } catch (error) {
+      console.error('Reject booking error:', error);
+
+      return res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+      });
+    }
+  }
+);
+
 export default router;
