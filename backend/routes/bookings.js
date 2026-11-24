@@ -878,4 +878,133 @@ if (error) {
   }
 );
 
+// ========================================
+// POST /api/bookings/remind-booking
+// MPP admin sends a payment reminder to the applicant
+// ========================================
+
+router.post(
+  '/remind-booking',
+  requireMPPAdmin,
+  async (req, res) => {
+    const { bookingId } = req.body || {};
+
+    if (!isUUID(bookingId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid bookingId is required',
+      });
+    }
+
+    try {
+      // 1. Fetch the booking + applicant + venue
+      const { data: booking, error: fetchError } = await supabase
+        .from('bookings')
+        .select(`
+          booking_id,
+          booking_ref,
+          status,
+          payment_deadline,
+          start_time,
+          profile_id,
+          venues ( venue_name )
+        `)
+        .eq('booking_id', bookingId)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+
+      if (!booking) {
+        return res.status(404).json({
+          success: false,
+          error: 'Booking not found',
+        });
+      }
+
+      // 2. Only allow reminders for bookings awaiting payment
+      if (booking.status !== 'approved_awaiting_payment') {
+        return res.status(409).json({
+          success: false,
+          error: `Cannot send reminder: booking is "${booking.status}", not awaiting payment`,
+        });
+      }
+
+      // 3. Rate limit: don't send more than one reminder per booking per 6 hours
+      const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+      const { data: recent, error: recentError } = await supabase
+        .from('notifications')
+        .select('notification_id')
+        .eq('booking_id', bookingId)
+        .eq('title', 'Payment Reminder')
+        .gte('created_at', sixHoursAgo)
+        .limit(1);
+
+      if (recentError) throw recentError;
+
+      if (recent && recent.length > 0) {
+        return res.status(429).json({
+          success: false,
+          error: 'A reminder was already sent to this applicant in the last 6 hours',
+        });
+      }
+
+      // 4. Build the message
+      const deadlineText = booking.payment_deadline
+        ? new Intl.DateTimeFormat('en-MY', {
+            day: 'numeric', month: 'short', year: 'numeric',
+            hour: 'numeric', minute: '2-digit', hour12: true,
+            timeZone: 'Asia/Kuala_Lumpur',
+          }).format(new Date(booking.payment_deadline))
+        : 'the deadline';
+
+      const venueName = booking.venues?.venue_name || 'the venue';
+
+      const message = `Reminder: your booking ${booking.booking_ref || ''} for ${venueName} is awaiting payment. Please complete payment before ${deadlineText} to avoid automatic cancellation.`;
+
+      // 5. Insert the notification
+      const { data: notification, error: insertError } = await supabase
+        .from('notifications')
+        .insert({
+          profile_id: booking.profile_id,
+          booking_id: booking.booking_id,
+          title: 'Payment Reminder',
+          message,
+        })
+        .select('notification_id, profile_id, booking_id, title, message, created_at')
+        .single();
+
+      if (insertError) throw insertError;
+
+      // 6. Audit log (best-effort, don't fail the request if it errors)
+      const { error: logError } = await supabase
+        .from('audit_logs')
+        .insert({
+          user_id: req.user.id,
+          action: 'SEND_PAYMENT_REMINDER',
+          details: {
+            bookingId,
+            notificationId: notification.notification_id,
+            sent_at: new Date().toISOString(),
+          },
+        });
+
+      if (logError) {
+        console.error('Reminder audit log error:', logError);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Reminder sent to applicant',
+        notification,
+      });
+    } catch (error) {
+      console.error('Send reminder error:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+      });
+    }
+  }
+);
+
 export default router;
