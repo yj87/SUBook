@@ -966,9 +966,11 @@ const handleSendReminder = async () => {
                     </>
                   )}
                   {selectedRequest.status === AWAITING_PAYMENT && (
-                    <button onClick={() => alert('Reminder sent to applicant!')}
-                      className="rounded-lg bg-[#F2B705] px-6 py-3 text-sm font-semibold text-[#1F1A1C] hover:bg-yellow-500 cursor-pointer">
-                      Send Reminder
+                    <button
+                      onClick={handleSendReminder}
+                      disabled={isProcessing}
+                      className="rounded-lg bg-[#F2B705] px-6 py-3 text-sm font-semibold text-[#1F1A1C] hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
+                      {isProcessing ? 'Sending…' : 'Send Reminder'}
                     </button>
                   )}
                 </div>
