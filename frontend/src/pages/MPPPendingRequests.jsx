@@ -360,16 +360,31 @@ const handleApprove = async () => {
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error || `Approve failed (${res.status})`);
 
-    const remaining = requests.filter(
-      (r) => r.booking_id !== selectedRequest.booking_id
+    // Update the booking's status in place — it's still an active booking
+    const updatedBooking = {
+      ...selectedRequest,
+      status: AWAITING_PAYMENT,
+      ...(body.booking?.payment_deadline
+        ? { payment_deadline: body.booking.payment_deadline }
+        : {}),
+    };
+
+    setRequests(prev =>
+      prev.map(r =>
+        r.booking_id === selectedRequest.booking_id ? updatedBooking : r
+      )
     );
-    setRequests(remaining);
-    setSelectedRequest(remaining.length > 0 ? remaining[0] : null);
+
+    // Move selection to the next pending booking, or keep the just-approved one
+    const nextPending = requests.find(
+      (r) => r.booking_id !== selectedRequest.booking_id && r.status === PENDING
+    );
+    setSelectedRequest(nextPending || updatedBooking);
 
     showToast(
-      remaining.length > 0
-        ? 'Booking approved. Moving to next request.'
-        : 'Booking approved. No more active requests.'
+      nextPending
+        ? 'Booking approved. Moving to next pending request.'
+        : 'Booking approved. Status updated to Awaiting Payment.'
     );
   } catch (err) {
     showToast('Error approving: ' + err.message, 'error');
