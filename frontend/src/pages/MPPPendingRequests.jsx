@@ -428,6 +428,34 @@ const handleApprove = async () => {
   }
 };
 
+const handleSendReminder = async () => {
+  if (!selectedRequest) return;
+
+  setIsProcessing(true);
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    const res = await fetch(`${API}/api/bookings/remind-booking`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session?.access_token ?? ''}`,
+      },
+      body: JSON.stringify({ bookingId: selectedRequest.booking_id }),
+    });
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Reminder failed (${res.status})`);
+
+    showToast('Reminder sent to applicant.');
+  } catch (err) {
+    showToast('Error sending reminder: ' + err.message, 'error');
+  } finally {
+    setIsProcessing(false);
+  }
+};
+
   const handleReviewChange = (key, value) =>
     setReviewFields(prev => ({ ...prev, [key]: value }));
 
@@ -938,9 +966,11 @@ const handleApprove = async () => {
                     </>
                   )}
                   {selectedRequest.status === AWAITING_PAYMENT && (
-                    <button onClick={() => alert('Reminder sent to applicant!')}
-                      className="rounded-lg bg-[#F2B705] px-6 py-3 text-sm font-semibold text-[#1F1A1C] hover:bg-yellow-500 cursor-pointer">
-                      Send Reminder
+                    <button
+                      onClick={handleSendReminder}
+                      disabled={isProcessing}
+                      className="rounded-lg bg-[#F2B705] px-6 py-3 text-sm font-semibold text-[#1F1A1C] hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
+                      {isProcessing ? 'Sending…' : 'Send Reminder'}
                     </button>
                   )}
                 </div>
