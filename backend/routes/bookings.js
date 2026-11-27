@@ -501,7 +501,9 @@ router.post(
         }
         attendees = expected_attendees;
       } else {
-        attendees = 1;
+        attendees = isNaN(Number(expected_attendees))
+          ? 1
+          : Math.max(1, Number(expected_attendees));
       }
 
       // ---------- Time + pricing ----------
