@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import ProfileModal from '../components/ProfileModal';
 import MPPSidebar from '../components/MPPSidebar';
@@ -65,6 +65,7 @@ export default function MPPPendingRequests() {
 
   // MPP overrides — keyed to the current selection
   const [reviewFields, setReviewFields] = useState({});
+  const backdropMouseDownRef = useRef(false);
 
   // Normalize so callers always get a single verification row (or null).
   const getVerification = (req) => {
@@ -1002,12 +1003,27 @@ const handleSendReminder = async () => {
 
       {/* Reject dialog */}
       {showRejectDialog && selectedRequest && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-          onClick={() => { if (!isProcessing) { setShowRejectDialog(false); setRejectError(''); } }}
-          onKeyDown={(e) => { if (e.key === 'Escape' && !isProcessing) { setShowRejectDialog(false); setRejectError(''); } }}
-          tabIndex={-1}>
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden"
-            onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="reject-dialog-title">
+        <div
+  className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+  onMouseDown={(e) => {
+    backdropMouseDownRef.current = e.target === e.currentTarget;
+  }}
+  onClick={(e) => {
+    if (backdropMouseDownRef.current && e.target === e.currentTarget && !isProcessing) {
+      setShowRejectDialog(false);
+      setRejectError('');
+    }
+    backdropMouseDownRef.current = false;
+  }}
+  onKeyDown={(e) => { if (e.key === 'Escape' && !isProcessing) { setShowRejectDialog(false); setRejectError(''); } }}
+  tabIndex={-1}
+>
+          <div
+  className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden"
+  onMouseDown={(e) => e.stopPropagation()}
+  onClick={(e) => e.stopPropagation()}
+  role="dialog" aria-modal="true" aria-labelledby="reject-dialog-title"
+>
             <div className="flex items-start justify-between border-b border-[#E3DEE0] bg-[#FAF9FA] p-5">
               <div>
                 <h2 id="reject-dialog-title" className="text-lg font-bold text-[#1F1A1C]">Reject Booking Request</h2>
