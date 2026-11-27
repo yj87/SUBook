@@ -15,11 +15,16 @@ const supabaseUrl = process.env.SUPABASE_URL
   ?.replace(/\/rest\/v1\/?$/, '');
 
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
   throw new Error(
     'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY'
   );
+}
+
+if (!supabaseAnonKey) {
+  throw new Error('Missing SUPABASE_ANON_KEY');   // ← add this
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -28,6 +33,17 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
     autoRefreshToken: false,
   },
 });
+
+function userScopedClient(accessToken) {
+  return createClient(
+    supabaseUrl,
+    supabaseAnonKey,
+    {
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    }
+  );
+}
 
 const ACTIVE_BOOKING_STATUSES = [
   'pending',
@@ -47,6 +63,7 @@ const BOOKING_SELECT = `
   start_time,
   end_time,
   date,
+  updated_at,
   status,
   venue_id,
   venues (venue_name)
@@ -121,7 +138,8 @@ router.get('/management', requireMPPAdmin, async (req, res) => {
     let query = supabase
       .from('bookings')
       .select(MANAGEMENT_BOOKING_SELECT)
-      .order('start_time', { ascending: false });
+      .order('updated_at', { ascending: false, nullsFirst: false })
+      .order('booking_id', { ascending: false });
 
     if (scope === 'active') query = query.gt('end_time', new Date().toISOString());
     else if (scope === 'past') query = query.lte('end_time', new Date().toISOString());
@@ -680,9 +698,19 @@ router.post(
       });
     }
 
+    const token = (req.headers.authorization || '').match(/^Bearer (.+)$/i)?.[1];
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        error: 'Missing auth token',
+      });
+    }
+
     try {
-      // Atomic capacity check and status transition.
-      const { data, error } = await supabase.rpc(
+      // ⬇️ THE FIX: use user-scoped client so auth.uid() resolves
+      const userScoped = userScopedClient(token);
+
+      const { data, error } = await userScoped.rpc(
         'approve_booking_with_capacity',
         { p_booking_id: bookingId }
       );
@@ -703,8 +731,7 @@ router.post(
         });
       }
 
-      // Approval already committed in the database.
-      // Report audit failures separately.
+      // Audit log stays on service role — user_id comes from req.user
       const { error: logError } = await supabase
         .from('audit_logs')
         .insert({
@@ -718,11 +745,9 @@ router.post(
 
       if (logError) {
         console.error('Approval audit log error:', logError);
-
         return res.status(200).json({
           success: true,
-          message:
-            'Booking approved, but audit logging failed',
+          message: 'Booking approved, but audit logging failed',
           booking: data,
           audit_logged: false,
         });
@@ -736,7 +761,244 @@ router.post(
       });
     } catch (error) {
       console.error('Approve booking error:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+      });
+    }
+  }
+);
 
+// ========================================
+// POST /api/bookings/reject-booking
+// MPP admin rejects a pending booking
+// ========================================
+
+router.post(
+  '/reject-booking',
+  requireMPPAdmin,
+  async (req, res) => {
+    const { bookingId, reason } = req.body || {};
+
+    if (!isUUID(bookingId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid bookingId is required',
+      });
+    }
+
+    const trimmed = String(reason ?? '').trim();
+    if (trimmed.length < 10) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reason must be at least 10 characters',
+      });
+    }
+    if (trimmed.length > 500) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reason must be at most 500 characters',
+      });
+    }
+
+    const token = (req.headers.authorization || '').match(/^Bearer (.+)$/i)?.[1];
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        error: 'Missing auth token',
+      });
+    }
+
+    try {
+      // ⬇️ THE FIX: same user-scoped client
+      const userScoped = userScopedClient(token);
+
+      const { data, error } = await userScoped.rpc(
+        'reject_booking',
+        {
+          p_booking_id: bookingId,
+          p_reason: trimmed,
+        }
+      );
+
+if (error) {
+  console.error('Reject RPC error:', error);
+
+  if (error.code === '42501') {
+    return res.status(403).json({ success: false, error: error.message });
+  }
+  if (error.code === 'P0002') {
+    return res.status(404).json({ success: false, error: error.message });
+  }
+  if (error.code === 'P0001') {
+    return res.status(409).json({ success: false, error: error.message });
+  }
+
+  return res.status(503).json({
+    success: false,
+    error: 'Booking rejection service unavailable',
+  });
+}
+
+      const { error: logError } = await supabase
+        .from('audit_logs')
+        .insert({
+          user_id: req.user.id,
+          action: 'REJECT_BOOKING',
+          details: {
+            bookingId,
+            reason: trimmed,
+            rejected_at: new Date().toISOString(),
+          },
+        });
+
+      if (logError) {
+        console.error('Rejection audit log error:', logError);
+        return res.status(200).json({
+          success: true,
+          message: 'Booking rejected, but audit logging failed',
+          booking: data,
+          audit_logged: false,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Booking rejected successfully',
+        booking: data,
+        audit_logged: true,
+      });
+    } catch (error) {
+      console.error('Reject booking error:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+      });
+    }
+  }
+);
+
+// ========================================
+// POST /api/bookings/remind-booking
+// MPP admin sends a payment reminder to the applicant
+// ========================================
+
+router.post(
+  '/remind-booking',
+  requireMPPAdmin,
+  async (req, res) => {
+    const { bookingId } = req.body || {};
+
+    if (!isUUID(bookingId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid bookingId is required',
+      });
+    }
+
+    try {
+      // 1. Fetch the booking + applicant + venue
+      const { data: booking, error: fetchError } = await supabase
+        .from('bookings')
+        .select(`
+          booking_id,
+          booking_ref,
+          status,
+          payment_deadline,
+          start_time,
+          profile_id,
+          venues ( venue_name )
+        `)
+        .eq('booking_id', bookingId)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+
+      if (!booking) {
+        return res.status(404).json({
+          success: false,
+          error: 'Booking not found',
+        });
+      }
+
+      // 2. Only allow reminders for bookings awaiting payment
+      if (booking.status !== 'approved_awaiting_payment') {
+        return res.status(409).json({
+          success: false,
+          error: `Cannot send reminder: booking is "${booking.status}", not awaiting payment`,
+        });
+      }
+
+      // 3. Rate limit: don't send more than one reminder per booking per 6 hours
+      const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+      const { data: recent, error: recentError } = await supabase
+        .from('notifications')
+        .select('notification_id')
+        .eq('booking_id', bookingId)
+        .eq('title', 'Payment Reminder')
+        .gte('created_at', sixHoursAgo)
+        .limit(1);
+
+      if (recentError) throw recentError;
+
+      if (recent && recent.length > 0) {
+        return res.status(429).json({
+          success: false,
+          error: 'A reminder was already sent to this applicant in the last 6 hours',
+        });
+      }
+
+      // 4. Build the message
+      const deadlineText = booking.payment_deadline
+        ? new Intl.DateTimeFormat('en-MY', {
+            day: 'numeric', month: 'short', year: 'numeric',
+            hour: 'numeric', minute: '2-digit', hour12: true,
+            timeZone: 'Asia/Kuala_Lumpur',
+          }).format(new Date(booking.payment_deadline))
+        : 'the deadline';
+
+      const venueName = booking.venues?.venue_name || 'the venue';
+
+      const message = `Reminder: your booking ${booking.booking_ref || ''} for ${venueName} is awaiting payment. Please complete payment before ${deadlineText} to avoid automatic cancellation.`;
+
+      // 5. Insert the notification
+      const { data: notification, error: insertError } = await supabase
+        .from('notifications')
+        .insert({
+          profile_id: booking.profile_id,
+          booking_id: booking.booking_id,
+          title: 'Payment Reminder',
+          message,
+        })
+        .select('notification_id, profile_id, booking_id, title, message, created_at')
+        .single();
+
+      if (insertError) throw insertError;
+
+      // 6. Audit log (best-effort, don't fail the request if it errors)
+      const { error: logError } = await supabase
+        .from('audit_logs')
+        .insert({
+          user_id: req.user.id,
+          action: 'SEND_PAYMENT_REMINDER',
+          details: {
+            bookingId,
+            notificationId: notification.notification_id,
+            sent_at: new Date().toISOString(),
+          },
+        });
+
+      if (logError) {
+        console.error('Reminder audit log error:', logError);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Reminder sent to applicant',
+        notification,
+      });
+    } catch (error) {
+      console.error('Send reminder error:', error);
       return res.status(500).json({
         success: false,
         error: 'Internal server error',

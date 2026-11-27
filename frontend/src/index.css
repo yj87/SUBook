@@ -9,3 +9,7 @@ body {
   padding: 0;
   box-sizing: border-box;
 }
+
+.calendar-page button:not(:disabled) {
+  cursor: pointer;
+}

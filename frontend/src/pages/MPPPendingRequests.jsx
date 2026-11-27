@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import ProfileModal from '../components/ProfileModal';
 import MPPSidebar from '../components/MPPSidebar';
@@ -65,6 +65,7 @@ export default function MPPPendingRequests() {
 
   // MPP overrides — keyed to the current selection
   const [reviewFields, setReviewFields] = useState({});
+  const backdropMouseDownRef = useRef(false);
 
   // Normalize so callers always get a single verification row (or null).
   const getVerification = (req) => {
@@ -337,65 +338,139 @@ export default function MPPPendingRequests() {
   };
 
   // ── Approve / Reject ──────────────────────────────────────────────
-  const handleApprove = async () => {
-    if (BLOCK_APPROVE_WITHOUT_VERIFICATION && !getVerification(selectedRequest)) {
-      alert('Please save an OCR verification before approving.');
-      return;
-    }
-    setIsProcessing(true);
-    try {
-      const { error } = await supabase.rpc('approve_booking_with_capacity', {
-        p_booking_id: selectedRequest.booking_id,
-      });
-      if (error) throw error;
-      
-      const remaining = requests.filter(r => r.booking_id !== selectedRequest.booking_id);
-      setRequests(remaining);
-      setSelectedRequest(remaining.length > 0 ? remaining[0] : null);
-      showToast(
-        remaining.length > 0
-          ? 'Booking approved. Moving to next request.'
-          : 'Booking approved. No more active requests.'
-      );
-    } catch (err) {
-      showToast('Error approving: ' + err.message, 'error');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+const handleApprove = async () => {
+  if (BLOCK_APPROVE_WITHOUT_VERIFICATION && !getVerification(selectedRequest)) {
+    alert('Please save an OCR verification before approving.');
+    return;
+  }
+
+  setIsProcessing(true);
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    const res = await fetch(`${API}/api/bookings/approve-booking`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session?.access_token ?? ''}`,
+      },
+      body: JSON.stringify({ bookingId: selectedRequest.booking_id }),
+    });
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Approve failed (${res.status})`);
+
+    // Update the booking's status in place — it's still an active booking
+    const updatedBooking = {
+      ...selectedRequest,
+      status: AWAITING_PAYMENT,
+      ...(body.booking?.payment_deadline
+        ? { payment_deadline: body.booking.payment_deadline }
+        : {}),
+    };
+
+    setRequests(prev =>
+      prev.map(r =>
+        r.booking_id === selectedRequest.booking_id ? updatedBooking : r
+      )
+    );
+
+    // Move selection to the next pending booking, or keep the just-approved one
+    const nextPending = requests.find(
+      (r) => r.booking_id !== selectedRequest.booking_id && r.status === PENDING
+    );
+    setSelectedRequest(nextPending || updatedBooking);
+
+    showToast(
+      nextPending
+        ? 'Booking approved. Moving to next pending request.'
+        : 'Booking approved. Status updated to Awaiting Payment.'
+    );
+  } catch (err) {
+    showToast('Error approving: ' + err.message, 'error');
+  } finally {
+    setIsProcessing(false);
+  }
+};
 
   const handleReject = async () => {
-    const trimmed = rejectReason.trim();
-    if (trimmed.length < 10) {
-      setRejectError('Please enter at least 10 characters explaining the reason.');
-      return;
-    }
-    setRejectError('');
-    setIsProcessing(true);
-    try {
-        const { data, error } = await supabase.rpc('reject_booking', {
-        p_booking_id: selectedRequest.booking_id,
-        p_reason: trimmed,
-      });
-      if (error) throw error;
-      
-      const remaining = requests.filter(r => r.booking_id !== selectedRequest.booking_id);
-      setRequests(remaining);
-      setSelectedRequest(remaining.length > 0 ? remaining[0] : null);
-      
-      setShowRejectDialog(false);
-      setRejectReason('');
-      showToast(
-        remaining.length > 0
-          ? 'Booking rejected. Moving to next request.'
-          : 'Booking rejected. No more active requests.'
-      );
-    } catch (err) {
-      setRejectError(err.message);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  const trimmed = rejectReason.trim();
+
+  if (trimmed.length < 10) {
+    setRejectError('Please enter at least 10 characters explaining the reason.');
+    return;
+  }
+
+  setRejectError('');
+  setIsProcessing(true);
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    const res = await fetch(`${API}/api/bookings/reject-booking`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session?.access_token ?? ''}`,
+      },
+      body: JSON.stringify({
+        bookingId: selectedRequest.booking_id,
+        reason: trimmed,
+      }),
+    });
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Reject failed (${res.status})`);
+
+    const remaining = requests.filter(
+      (r) => r.booking_id !== selectedRequest.booking_id
+    );
+    setRequests(remaining);
+    setSelectedRequest(remaining.length > 0 ? remaining[0] : null);
+
+    setShowRejectDialog(false);
+    setRejectReason('');
+
+    showToast(
+      remaining.length > 0
+        ? 'Booking rejected. Moving to next request.'
+        : 'Booking rejected. No more active requests.'
+    );
+  } catch (err) {
+    setRejectError(err.message);
+  } finally {
+    setIsProcessing(false);
+  }
+};
+
+const handleSendReminder = async () => {
+  if (!selectedRequest) return;
+
+  setIsProcessing(true);
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    const res = await fetch(`${API}/api/bookings/remind-booking`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session?.access_token ?? ''}`,
+      },
+      body: JSON.stringify({ bookingId: selectedRequest.booking_id }),
+    });
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Reminder failed (${res.status})`);
+
+    showToast('Reminder sent to applicant.');
+  } catch (err) {
+    showToast('Error sending reminder: ' + err.message, 'error');
+  } finally {
+    setIsProcessing(false);
+  }
+};
 
   const handleReviewChange = (key, value) =>
     setReviewFields(prev => ({ ...prev, [key]: value }));
@@ -436,7 +511,13 @@ export default function MPPPendingRequests() {
 
       return matchesSearch && matchesVenue;
     })
+
     .sort((a, b) => {
+      // 1. Prioritize Pending Approvals above Awaiting Payments
+      if (a.status === PENDING && b.status !== PENDING) return -1;
+      if (a.status !== PENDING && b.status === PENDING) return 1;
+
+      // 2. Then sort by the selected sort order
       if (sortOrder === 'newest')    return new Date(b.submitted_at) - new Date(a.submitted_at);
       if (sortOrder === 'oldest')    return new Date(a.submitted_at) - new Date(b.submitted_at);
       if (sortOrder === 'date_asc')  return new Date(a.start_time) - new Date(b.start_time);
@@ -490,15 +571,15 @@ export default function MPPPendingRequests() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#F6F4F5]">
+    <div className="flex h-screen bg-[#F6F4F5] overflow-hidden relative">
       <MPPSidebar
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}
         setIsProfileOpen={setIsProfileOpen}
       />
 
-       <main className="flex-1 min-w-0 p-4 md:p-10">
-        <div className="flex items-center gap-3 md:hidden mb-6">
+       <main className="flex-1 min-w-0 p-4 md:p-10 h-full overflow-hidden flex flex-col">
+        <div className="flex items-center gap-3 md:hidden mb-6 shrink-0">
           <button className="text-[#1F1A1C] p-1 -ml-1 cursor-pointer" onClick={() => setIsMobileMenuOpen(true)}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M4 6h16M4 12h16M4 18h16" />
@@ -520,10 +601,10 @@ export default function MPPPendingRequests() {
             No active booking requests at the moment. You're all caught up!
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-10 items-stretch">
+          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-10 items-stretch flex-1 min-h-0">
             {/* LEFT LIST */}
-            <div className="relative">
-              <div className="rounded-xl border border-[#E3DEE0] bg-white flex flex-col overflow-hidden max-h-[400px] lg:max-h-none lg:absolute lg:inset-0">
+            <div className="h-full min-h-0">
+              <div className="rounded-xl border border-[#E3DEE0] bg-white flex flex-col h-full overflow-hidden">
               {/* STICKY HEADER (Search & Filters) */}
               <div className="shrink-0 bg-white p-4 border-b border-[#E3DEE0] rounded-t-xl z-10">
                 <h2 className="text-sm font-bold mb-4">
@@ -540,7 +621,6 @@ export default function MPPPendingRequests() {
                     <option value="All Active">All Active Requests</option>
                     <option value="Pending">Pending Approval</option>
                     <option value="Awaiting Payment">Awaiting Payment</option>
-                    <option value="Payment Submitted">Payment Submitted</option>
                   </select>
 
                   <input 
@@ -591,7 +671,7 @@ export default function MPPPendingRequests() {
                     return (
                       <button key={req.booking_id}
                         onClick={() => { setSelectedRequest(req); setRejectReason(''); setRejectError(''); }}
-                        className={`text-left p-3 rounded-lg border transition-colors ${
+                        className={`cursor-pointer text-left p-3 rounded-lg border transition-colors ${
                           selectedRequest?.booking_id === req.booking_id
                             ? 'bg-[#F6E9EE] border-[#7A1F3D]'
                             : 'bg-[#FAF8F9] border-[#E3DEE0] hover:bg-[#F3EEF0]'
@@ -627,7 +707,7 @@ export default function MPPPendingRequests() {
 
             {/* RIGHT DETAILS */}
             {selectedRequest && (
-              <div className="rounded-xl border border-[#E3DEE0] bg-white p-6 md:p-8 w-full max-w-5xl">
+              <div className="rounded-xl border border-[#E3DEE0] bg-white p-6 md:p-8 w-full max-w-5xl h-full overflow-y-auto">
                 <div className="mb-6">
                   <h2 className="text-xl font-bold text-[#1F1A1C]">
                     {selectedRequest.booking_ref} – {selectedRequest.venues?.venue_name}
@@ -902,9 +982,11 @@ export default function MPPPendingRequests() {
                     </>
                   )}
                   {selectedRequest.status === AWAITING_PAYMENT && (
-                    <button onClick={() => alert('Reminder sent to applicant!')}
-                      className="rounded-lg bg-[#F2B705] px-6 py-3 text-sm font-semibold text-[#1F1A1C] hover:bg-yellow-500 cursor-pointer">
-                      Send Reminder
+                    <button
+                      onClick={handleSendReminder}
+                      disabled={isProcessing}
+                      className="rounded-lg bg-[#F2B705] px-6 py-3 text-sm font-semibold text-[#1F1A1C] hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
+                      {isProcessing ? 'Sending…' : 'Send Reminder'}
                     </button>
                   )}
                 </div>
@@ -921,12 +1003,27 @@ export default function MPPPendingRequests() {
 
       {/* Reject dialog */}
       {showRejectDialog && selectedRequest && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-          onClick={() => { if (!isProcessing) { setShowRejectDialog(false); setRejectError(''); } }}
-          onKeyDown={(e) => { if (e.key === 'Escape' && !isProcessing) { setShowRejectDialog(false); setRejectError(''); } }}
-          tabIndex={-1}>
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden"
-            onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="reject-dialog-title">
+        <div
+  className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+  onMouseDown={(e) => {
+    backdropMouseDownRef.current = e.target === e.currentTarget;
+  }}
+  onClick={(e) => {
+    if (backdropMouseDownRef.current && e.target === e.currentTarget && !isProcessing) {
+      setShowRejectDialog(false);
+      setRejectError('');
+    }
+    backdropMouseDownRef.current = false;
+  }}
+  onKeyDown={(e) => { if (e.key === 'Escape' && !isProcessing) { setShowRejectDialog(false); setRejectError(''); } }}
+  tabIndex={-1}
+>
+          <div
+  className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden"
+  onMouseDown={(e) => e.stopPropagation()}
+  onClick={(e) => e.stopPropagation()}
+  role="dialog" aria-modal="true" aria-labelledby="reject-dialog-title"
+>
             <div className="flex items-start justify-between border-b border-[#E3DEE0] bg-[#FAF9FA] p-5">
               <div>
                 <h2 id="reject-dialog-title" className="text-lg font-bold text-[#1F1A1C]">Reject Booking Request</h2>

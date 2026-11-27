@@ -10,24 +10,24 @@ export default function Sidebar({ role }) {
   const navigate = useNavigate();
   const [loggingOut, setLoggingOut] = useState(false);
 
-  const handleLogout = async () => {
-  console.log('LOGOUT CLICKED');
-  setLoggingOut(true);
-  console.log('loggingOut set to true');
+const handleLogout = async () => {
+    setLoggingOut(true);
 
-  sessionStorage.removeItem('intended_portal');
-  const { error } = await supabase.auth.signOut();
-  console.log('signOut returned:', error);
+    try {
+      // 1. Wipe all client-side auth state
+      sessionStorage.clear();
+      localStorage.clear();
 
-  if (error) {
-    setLoggingOut(false);
-    return;
-  }
+      // 2. Force sign out from Supabase (ignore errors — we're forcing out anyway)
+      await supabase.auth.signOut({ scope: 'global' });
+    } catch (err) {
+      console.error('Force logout error:', err);
+    }
 
-  setTimeout(() => {
+    // 3. Hard redirect — replaces history so Back button can't return
     window.location.replace('/login');
-  }, 600); // bump to 2s for testing
-};
+  };
+  
   return (
     <div className="w-64 bg-white border-r border-[#E3DEE0] min-h-screen p-6 flex flex-col justify-between hidden md:flex">
       <div>

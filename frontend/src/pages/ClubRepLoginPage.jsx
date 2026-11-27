@@ -202,7 +202,7 @@ export default function ClubRepLoginPage() {
           )}
 
           <div className="flex pt-5 flex-col items-start gap-4 border-t border-t-[#E3DEE0] w-full overflow-hidden">
-            <button className="cursor-pointer text-nowrap flex justify-center items-center gap-2 w-full overflow-hidden">
+            <button className="text-nowrap flex justify-center items-center gap-2 w-full overflow-hidden">
               <svg
                 width="14"
                 height="14"
@@ -235,10 +235,10 @@ export default function ClubRepLoginPage() {
                 Sign in as a different role?
               </p>
               <div className="flex items-center gap-4">
-                <Link to="/login" className="text-[#7A1F3D] font-inter text-xs font-semibold hover:underline">
+                <Link to="/login" className="text-[#7A1F3D] font-inter text-xs font-semibold hover:underline underline">
                   👉 Student login
                 </Link>
-                <Link to="/login/admin" className="text-[#7A1F3D] font-inter text-xs font-semibold hover:underline">
+                <Link to="/login/admin" className="text-[#7A1F3D] font-inter text-xs font-semibold hover:underline underline">
                   👉 Admin login
                 </Link>
               </div>

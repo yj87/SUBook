@@ -598,7 +598,7 @@ const clearSelectionError = () => {
             <button
               type="button"
               onClick={() => setRetryToken((v) => v + 1)}
-              className="mt-4 rounded-lg bg-[#7A1F3D] px-4 py-2 text-sm font-semibold text-white"
+              className="mt-4 rounded-lg bg-[#7A1F3D] px-4 py-2 text-sm font-semibold text-white cursor-pointer"
             >
               Retry
             </button>
@@ -607,7 +607,7 @@ const clearSelectionError = () => {
 
         {!loading && venue && (
           <>
-          <button type="button" onClick={() => navigate(-1)} className="mb-5 inline-flex items-center gap-1 text-sm font-medium text-[#6B6468] hover:text-[#7A1F3D]">
+          <button type="button" onClick={() => navigate(-1)} className="mb-5 inline-flex items-center gap-1 text-sm font-medium text-[#6B6468] hover:text-[#7A1F3D] cursor-pointer">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
             Back
           </button>
@@ -629,22 +629,22 @@ const clearSelectionError = () => {
                   setDailyDates([]);
                   clearSelectionError();
                 }}
-                className={`flex flex-col items-start gap-1 rounded-xl border-2 px-4 py-3 text-left transition-all ${
+                className={`cursor-pointer flex flex-col items-start gap-1 rounded-xl border-2 px-4 py-3 text-left transition-all ${
                   bookingMode === 'hourly'
                     ? 'border-[#7A1F3D] bg-[#FAF3F6] ring-2 ring-[#7A1F3D]/20'
                     : 'border-[#E3DEE0] bg-white hover:border-[#7A1F3D]'
                 }`}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 cursor-pointer">
                   <span
-                    className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
+                    className={`cursor-pointer flex h-5 w-5 items-center justify-center rounded-full border-2 cursor-pointer${
                       bookingMode === 'hourly'
                         ? 'border-[#7A1F3D] bg-[#7A1F3D]'
                         : 'border-[#B8B0B3] bg-white'
                     }`}
                   >
                     {bookingMode === 'hourly' && (
-                      <span className="h-2 w-2 rounded-full bg-white" />
+                      <span className="h-2 w-2 rounded-full bg-white cursor-pointer" />
                     )}
                   </span>
                   <span className="text-base font-bold text-[#1F1A1C]">Book by Hour</span>
@@ -661,7 +661,7 @@ const clearSelectionError = () => {
                   setSelectedRange([]);
                   clearSelectionError();
                 }}
-                className={`flex flex-col items-start gap-1 rounded-xl border-2 px-4 py-3 text-left transition-all ${
+                className={`cursor-pointer flex flex-col items-start gap-1 rounded-xl border-2 px-4 py-3 text-left transition-all ${
                   bookingMode === 'daily'
                     ? 'border-[#7A1F3D] bg-[#FAF3F6] ring-2 ring-[#7A1F3D]/20'
                     : 'border-[#E3DEE0] bg-white hover:border-[#7A1F3D]'
@@ -699,14 +699,14 @@ const clearSelectionError = () => {
                       type="button"
                       disabled={monthValue === minimumMonth}
                       onClick={() => moveMonth(-1)}
-                      className="h-8 w-8 rounded border border-[#E3DEE0] disabled:opacity-40"
+                      className="cursor-pointer h-8 w-8 rounded border border-[#E3DEE0] disabled:opacity-40"
                     >
                       ‹
                     </button>
                     <button
                       type="button"
                       onClick={() => moveMonth(1)}
-                      className="h-8 w-8 rounded border border-[#E3DEE0]"
+                      className="cursor-pointer h-8 w-8 rounded border border-[#E3DEE0]"
                     >
                       ›
                     </button>
@@ -777,7 +777,7 @@ const clearSelectionError = () => {
                             ? 'Bookings require at least 3 calendar days advance notice'
                             : undefined
                         }
-                        className={`aspect-square rounded-lg border border-[#E3DEE0] p-2 text-left text-[13px]
+                        className={`cursor-pointer aspect-square rounded-lg border border-[#E3DEE0] p-2 text-left text-[13px]
                           ${
                             selected
                               ? 'bg-[#CDEFD6] font-bold'
@@ -852,7 +852,7 @@ const clearSelectionError = () => {
                             disabled={disabled}
                             onClick={() => chooseSlot(slot)}
                             aria-pressed={isSelected}
-                            className={`flex min-h-[46px] w-full items-center justify-between rounded-lg border px-4 text-left text-[13px] transition-colors
+                            className={`cursor-pointer flex min-h-[46px] w-full items-center justify-between rounded-lg border px-4 text-left text-[13px] transition-colors
                               ${
                                 slot.unavailable
                                   ? 'border-[#E3DEE0] bg-[#E5E5E5]'
@@ -988,7 +988,7 @@ const clearSelectionError = () => {
                   type="button"
                   disabled={!canContinue}
                   onClick={handleContinue}
-                  className="mt-7 h-[42px] w-full rounded-lg bg-[#7A1F3D] text-[13px] font-semibold text-white hover:bg-[#651830] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="cursor-pointer mt-7 h-[42px] w-full rounded-lg bg-[#7A1F3D] text-[13px] font-semibold text-white hover:bg-[#651830] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Continue
                 </button>
@@ -1012,9 +1012,9 @@ const clearSelectionError = () => {
         )}
       </main>
 
-      <div className="fixed bottom-5 right-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#7A1F3D] text-lg font-bold text-white">
+      <button className="cursor-pointer fixed bottom-5 right-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#7A1F3D] text-lg font-bold text-white hover:bg-[#651830]">
         AI
-      </div>
+      </button>
 
       <ProfileModal
         isOpen={isProfileOpen}

@@ -20,7 +20,7 @@ function BookingCard({ booking, onSelect, compact = false, style }) {
       title={`${booking.title} · ${booking.venueName}`}
       onClick={() => onSelect(booking)}
       style={style}
-      className={`absolute z-[2] min-w-0 overflow-hidden rounded-md border border-l-4 p-1.5 text-left shadow-sm transition hover:z-10 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#7A1F3D] ${BOOKING_STATUS_TONE_CLASSES[status.tone]}`}
+      className={`cursor-pointer absolute z-[2] min-w-0 overflow-hidden rounded-md border border-l-4 p-1.5 text-left shadow-sm transition hover:z-10 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#7A1F3D] ${BOOKING_STATUS_TONE_CLASSES[status.tone]}`}
     >
       <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle ${status.dot}`} />
       <span className="block truncate text-[10px] font-bold leading-tight">{booking.venueName}</span>
@@ -43,7 +43,7 @@ function BookingDetails({ booking, onClose }) {
             <p className="text-xs font-semibold uppercase tracking-wide text-[#7A1F3D]">Booking details</p>
             <h4 id="booking-details-title" className="mt-1 text-lg font-bold text-[#1F1A1C]">{booking.title}</h4>
           </div>
-          <button type="button" onClick={onClose} className="text-2xl leading-none text-[#6B6468]" aria-label="Close booking details">×</button>
+          <button type="button" onClick={onClose} className="cursor-pointer text-2xl leading-none text-[#6B6468]" aria-label="Close booking details">×</button>
         </div>
         <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 text-sm">
           <dt className="font-semibold text-[#6B6468]">Booking Reference</dt><dd className="min-w-0 break-words text-[#1F1A1C]">{booking.booking_ref || '—'}</dd>
@@ -83,14 +83,14 @@ export default function BookingCalendar({ days, bookings, loading, error, onRetr
             {days.map((day) => (
               <div key={dateKey(day)} className="min-h-12 border-l border-[#E3DEE0] p-1">
                 <div className="flex flex-col gap-1">
-                  {allDayBookings(day).map((booking) => <button key={booking.booking_id} type="button" onClick={() => setSelectedBooking(booking)} title={`${booking.venueName} · Full day`} className={`truncate rounded border-l-4 px-2 py-1 text-left text-[10px] font-semibold ${BOOKING_STATUS_TONE_CLASSES[getBookingStatusStyle(booking.status).tone]}`}><span className="mr-1">●</span>{booking.venueName}<span className="ml-1 font-normal">· Full day</span></button>)}
+                  {allDayBookings(day).map((booking) => <button key={booking.booking_id} type="button" onClick={() => setSelectedBooking(booking)} title={`${booking.venueName} · Full day`} className={`cursor-pointer truncate rounded border-l-4 px-2 py-1 text-left text-[10px] font-semibold ${BOOKING_STATUS_TONE_CLASSES[getBookingStatusStyle(booking.status).tone]}`}><span className="mr-1">●</span>{booking.venueName}<span className="ml-1 font-normal">· Full day</span></button>)}
                 </div>
               </div>
             ))}
           </div>
 
           {loading && <div className="p-8 text-center text-sm text-[#6B6468]" role="status">Loading bookings…</div>}
-          {!loading && error && <div className="p-8 text-center text-sm text-red-700" role="alert">{error} <button type="button" onClick={onRetry} className="ml-2 font-semibold underline">Try again</button></div>}
+          {!loading && error && <div className="p-8 text-center text-sm text-red-700" role="alert">{error} <button type="button" onClick={onRetry} className="cursor-pointer ml-2 font-semibold underline">Try again</button></div>}
           {!loading && !error && normalized.length === 0 && <div className="p-8 text-center text-sm text-[#6B6468]">No bookings for this week.</div>}
 
           {!loading && !error && normalized.length > 0 && <div className="grid grid-cols-[76px_repeat(7,minmax(0,1fr))]">

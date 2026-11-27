@@ -61,7 +61,7 @@ export default function ClubFAQ() {
     const isOpen = openId === faq.id;
     return (
       <div key={faq.id} className="bg-white rounded-[8px] shadow-[0_15px_45px_-10px_rgba(0,0,0,0.15)] transition-all duration-300 w-full">
-        <button onClick={() => toggleFAQ(faq.id)} className="w-full flex items-start justify-between p-6 text-left focus:outline-none group">
+        <button onClick={() => toggleFAQ(faq.id)} className="w-full flex items-start justify-between p-6 text-left focus:outline-none group cursor-pointer">
           <span className="text-[#1B1139] font-semibold text-[16px] pr-4 leading-snug">{faq.question}</span>
           <div className="shrink-0 mt-0.5">
             {isOpen ? (
@@ -95,7 +95,7 @@ export default function ClubFAQ() {
         </div>
       </main>
 
-      <button className="fixed bottom-6 right-6 md:bottom-8 md:right-8 bg-[#7A1F3D] w-14 h-14 md:w-16 md:h-16 rounded-full flex items-center justify-center shadow-lg hover:bg-[#5c162d] transition-colors z-50">
+      <button className="fixed bottom-6 right-6 md:bottom-8 md:right-8 bg-[#7A1F3D] w-14 h-14 md:w-16 md:h-16 rounded-full flex items-center justify-center shadow-lg hover:bg-[#5c162d] transition-colors z-50 cursor-pointer">
         <span className="text-white text-base md:text-lg font-bold">AI</span>
       </button>
 
