@@ -7,16 +7,22 @@ export default function MPPSidebar({ isMobileMenuOpen, setIsMobileMenuOpen, setI
   const location = useLocation();
   const [loggingOut, setLoggingOut] = useState(false);
 
-  const handleLogout = async () => {
+const handleLogout = async () => {
     setLoggingOut(true);
-    sessionStorage.removeItem('intended_portal');
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error('Logout error:', error.message);
-      setLoggingOut(false);
-      return;
+
+    try {
+      // 1. Wipe all client-side auth state
+      sessionStorage.clear();
+      localStorage.clear();
+
+      // 2. Force sign out from Supabase (ignore errors — we're forcing out anyway)
+      await supabase.auth.signOut({ scope: 'global' });
+    } catch (err) {
+      console.error('Force logout error:', err);
     }
-    setTimeout(() => window.location.replace('/login'), 600);
+
+    // 3. Hard redirect — replaces history so Back button can't return
+    window.location.replace('/login');
   };
 
   const isActive = (path) => location.pathname === path;
