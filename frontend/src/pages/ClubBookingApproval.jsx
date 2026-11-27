@@ -83,7 +83,8 @@ const normalizeTime = (s) => {
   const [ocrResult, setOcrResult] = useState(null);
   const [ocrRawFields, setOcrRawFields] = useState({}); 
   
-  const [attendees, setAttendees] = useState('1');
+  const [attendees, setAttendees] = useState('');
+  const [attendeesEdited, setAttendeesEdited] = useState(false);
 
   useEffect(() => {
     const fetchVenue = async () => {
@@ -160,7 +161,9 @@ const normalizeTime = (s) => {
       eventPurpose: body.eventPurpose ?? prev.eventPurpose,
     }));
 
-    if (body.attendees != null) setAttendees(String(body.attendees));
+    if (body.attendees != null && !attendeesEdited) {
+      setAttendees(String(body.attendees));
+    }
 
     setOcrRawFields({
       venue:     body.venue,
@@ -201,6 +204,7 @@ const removeFile = () => {
   setOcrError('');
   setOcrResult(null);
   setOcrRawFields({});
+  setAttendeesEdited(false);
   setEventDetails({ clubName: '', eventName: '', eventPurpose: '' });
   if (fileInputRef.current) fileInputRef.current.value = '';
   setIsScanning(false);
@@ -212,10 +216,24 @@ const removeFile = () => {
 
   const handleReviewRequest = (e) => {
     e.preventDefault();
+    setFileError('');
+
     if (requiresLetter && !file) {
       setFileError('Approval letter is required for this venue.');
       return;
     }
+
+    const attendeeCount = Number(attendees);
+    if (!attendees || !Number.isInteger(attendeeCount) || attendeeCount < 1) {
+      setFileError('Please enter the expected number of attendees.');
+      return;
+    }
+
+    if (venue?.is_shared === true && venue?.capacity && attendeeCount > Number(venue.capacity)) {
+      setFileError(`Expected attendees (${attendeeCount}) exceed venue capacity (${venue.capacity}).`);
+      return;
+    }
+
     setShowSummaryModal(true);
   };
 
@@ -247,6 +265,11 @@ const removeFile = () => {
           
         publicUrl = url;
       }
+
+      console.log('=== SUBMIT DEBUG ===');
+      console.log('attendees state:', JSON.stringify(attendees));
+      console.log('attendees type:', typeof attendees);
+      console.log('attendeesEdited:', attendeesEdited);
 
       const payload = {
         venueId,
@@ -520,9 +543,16 @@ const ocrWarnings = (() => {
                   <input 
                     type="number" 
                     min="1" 
-                    max={venue?.capacity ? Number(venue.capacity) : undefined} 
+                    max={
+                      venue?.is_shared === true && venue?.capacity
+                      ? Number(venue.capacity)
+                      : undefined
+                    }
                     value={attendees} 
-                    onChange={(e) => setAttendees(e.target.value)} 
+                    onChange={(e) => {
+                      setAttendees(e.target.value);
+                      setAttendeesEdited(true);
+                    }}
                     className="w-full h-10 px-3 bg-white border border-[#E3DEE0] rounded-lg text-[13px] focus:border-[#7A1F3D] outline-none" 
                     required 
                   />
