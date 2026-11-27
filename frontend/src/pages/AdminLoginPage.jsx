@@ -167,10 +167,10 @@ export default function AdminLoginPage() {
             <div className="flex flex-col items-center gap-1.5 w-full">
               <p className="text-[#6B6468] font-inter text-xs">Sign in as a different role?</p>
               <div className="flex items-center gap-4">
-                <Link to="/login" className="font-inter text-xs font-semibold hover:underline" style={{ color: '#7A1F3D' }}>
+                <Link to="/login" className="font-inter text-xs font-semibold hover:underline underline" style={{ color: '#7A1F3D' }}>
                   👉 Student login 
                 </Link>
-                <Link to="/login/club" className="font-inter text-xs font-semibold hover:underline" style={{ color: '#7A1F3D' }}>
+                <Link to="/login/club" className="font-inter text-xs font-semibold hover:underline underline" style={{ color: '#7A1F3D' }}>
                   👉 Club representative login
                 </Link>
               </div>
